@@ -1,0 +1,14 @@
+{
+  "name": "divyaloka",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": ["apps/*"],
+  "scripts": {
+    "dev": "docker compose -f infra/docker-compose.yml up -d postgres redis && concurrently -n api,web -c yellow,cyan \"npm -w @divyaloka/api run dev\" \"npm -w @divyaloka/web run dev\"",
+    "build": "npm -w @divyaloka/api run build && npm -w @divyaloka/web run build",
+    "db:migrate": "npm -w @divyaloka/api run prisma:migrate",
+    "db:seed": "npm -w @divyaloka/api run seed",
+    "typecheck": "npm -w @divyaloka/api run typecheck && npm -w @divyaloka/web run typecheck"
+  },
+  "devDependencies": { "concurrently": "^9.0.1" }
+}

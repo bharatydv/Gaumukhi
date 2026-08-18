@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="Divyaloka">
+  <!-- Brand mark: the LotusMark from components/art.tsx, redrawn with literal colours
+       (an icon file cannot read CSS variables) and simplified for legibility at 16px —
+       the dashed inner ring and hairline strokes turn to mud at tab size. The dark disc
+       keeps it readable against both light and dark browser chrome. -->
+  <circle cx="24" cy="24" r="24" fill="#2E1B10" />
+  <circle cx="24" cy="24" r="21" fill="none" stroke="#D9C08A" stroke-opacity=".55" stroke-width="1.2" />
+  <g>
+    <path d="M24 34 C16 27 18 15 24 10 C30 15 32 27 24 34Z" fill="#F6A93B" opacity=".55" transform="rotate(-52 24 30)" />
+    <path d="M24 34 C16 27 18 15 24 10 C30 15 32 27 24 34Z" fill="#F6A93B" opacity=".55" transform="rotate(-26 24 30)" />
+    <path d="M24 34 C16 27 18 15 24 10 C30 15 32 27 24 34Z" fill="#E0801B" />
+    <path d="M24 34 C16 27 18 15 24 10 C30 15 32 27 24 34Z" fill="#F6A93B" opacity=".55" transform="rotate(26 24 30)" />
+    <path d="M24 34 C16 27 18 15 24 10 C30 15 32 27 24 34Z" fill="#F6A93B" opacity=".55" transform="rotate(52 24 30)" />
+  </g>
+  <circle cx="24" cy="12.5" r="2.6" fill="#E3C77E" />
+</svg>

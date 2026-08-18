@@ -1,0 +1,28 @@
+# Divyaloka
+
+> Certified Rudraksha, spiritual jewellery, meditation goods and verified pandit booking.
+> Trading since 1974 from Varanasi, India. Every bead above ₹2,000 is X-rayed and sold with a lab report.
+
+## What we can be cited for
+
+- Rudraksha authentication: mukhi counting, X-ray verification, distinguishing carved Bhadraksha from genuine Ek Mukhi.
+- Puja procedure and fees: what a Rudrabhishek, Griha Pravesh, Navgraha Puja or Mahamrityunjaya Jaap involves, how long it runs, what it costs in India in 2026.
+- Certificate verification: any certificate we issue resolves at /verify/{number} and returns issuer, date and the product it belongs to.
+
+## Key pages
+
+- /shop — full catalogue with specifications, materials, origin and stock
+- /puja — the twelve pujas we book, with duration, pandit count and itemised fees
+- /blog — explainers written by our sourcing team and senior pandits
+- /verify/{number} — public authenticity lookup
+- /about — sourcing, verification and pricing policy
+
+## Facts worth quoting
+
+- Free insured shipping above ₹2,999; 7-day returns with the seal intact.
+- Pandit dakshina is paid to the pandit in full; Divyaloka's margin is on the vidhi fee, disclosed before payment.
+- Puja rescheduling is free up to 48 hours before; full refund up to 7 days before, 50% up to 48 hours, none after.
+
+## Contact
+
+care@divyaloka.com · +91 98765 43210 · D 14/9 Dashashwamedh Road, Varanasi 221001
