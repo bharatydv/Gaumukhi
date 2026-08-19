@@ -13,6 +13,77 @@ const SECTIONS = ["Dashboard", "Orders", "Products", "Categories", "Inventory", 
 const rupees = (paise?: number | null) => Math.round((paise ?? 0) / 100);
 const pretty = (s?: string) => (s ?? "").replace(/_/g, " ").toLowerCase().replace(/^./, (c) => c.toUpperCase());
 
+/**
+ * Product editor shape. Create and edit share it so a field can never exist on
+ * one path and not the other — an absent key is sent as undefined and blanks
+ * the column server-side, which is how descriptions used to get wiped on save.
+ */
+const blankProduct = (categoryId = "") => ({
+  id: undefined as string | undefined,
+  name: "", categoryId, price: 0, mrp: 0, stock: 0, gstRate: 3,
+  mukhi: 5, artKind: "mala", artTone: "rudraksha",
+  description: "", benefits: "", howToWear: "", careNotes: "",
+  material: "", origin: "", weightGrams: 0, dimensions: "",
+  hsnCode: "", badge: "", status: "ACTIVE", featured: false,
+  metaTitle: "", metaDescription: "",
+});
+
+const productToForm = (p: any) => ({
+  ...blankProduct(),
+  id: p.id,
+  name: p.name ?? "",
+  categoryId: p.categoryId ?? "",
+  price: rupees(p.price),
+  mrp: rupees(p.mrp),
+  stock: p.stock ?? 0,
+  gstRate: Number(p.gstRate ?? 3),
+  mukhi: p.mukhi ?? 5,
+  artKind: p.artKind ?? "bead",
+  artTone: p.artTone ?? "rudraksha",
+  description: p.description ?? p.desc ?? "",
+  benefits: (Array.isArray(p.benefits) ? p.benefits : []).join("\n"),
+  howToWear: p.howToWear ?? "",
+  careNotes: p.careNotes ?? "",
+  material: p.material ?? "",
+  origin: p.origin ?? "",
+  weightGrams: p.weightGrams ?? 0,
+  dimensions: p.dimensions ?? "",
+  hsnCode: p.hsnCode ?? "",
+  badge: p.badge ?? "",
+  status: p.status ?? "ACTIVE",
+  featured: !!p.featured,
+  metaTitle: p.metaTitle ?? "",
+  metaDescription: p.metaDescription ?? "",
+});
+
+/** Form values → the API's own units and types. */
+const formToProduct = (f: any) => ({
+  ...(f.id ? { id: f.id } : {}),
+  name: f.name.trim(),
+  categoryId: f.categoryId,
+  price: Math.round(f.price * 100),
+  mrp: Math.round(f.mrp * 100),
+  stock: f.stock,
+  gstRate: f.gstRate,
+  mukhi: f.mukhi || undefined,
+  artKind: f.artKind,
+  artTone: f.artTone,
+  description: f.description,
+  benefits: f.benefits.split("\n").map((s: string) => s.trim()).filter(Boolean),
+  howToWear: f.howToWear || undefined,
+  careNotes: f.careNotes || undefined,
+  material: f.material || undefined,
+  origin: f.origin || undefined,
+  weightGrams: f.weightGrams || undefined,
+  dimensions: f.dimensions || undefined,
+  hsnCode: f.hsnCode || undefined,
+  badge: f.badge || undefined,
+  status: f.status,
+  featured: f.featured,
+  metaTitle: f.metaTitle || undefined,
+  metaDescription: f.metaDescription || undefined,
+});
+
 const statusPill = (s: string) =>
   /DELIVERED|PAID|APPROVED|COMPLETED|CONFIRMED|ACTIVE/i.test(s) ? "ok"
     : /CANCEL|REFUND|FAIL|SUSPEND|REJECT|EXPIRED/i.test(s) ? "bad" : "warn";
@@ -264,10 +335,10 @@ function AdminPanel() {
               <p className="muted" style={{ fontSize: ".86rem" }}>
                 {(data.products ?? []).length} products · {(data.products ?? []).filter((p: any) => p.stock < 6).length} low on stock
               </p>
-              <button className="btn btn-primary btn-sm" onClick={() => setEditing({
-                name: "", categoryId: (data.categories?.[0]?.items?.[0]?.id) ?? "", price: 0, mrp: 0, stock: 0,
-                mukhi: 5, artKind: "mala", artTone: "rudraksha", description: "",
-              })}>Add product</button>
+              <button className="btn btn-primary btn-sm"
+                onClick={() => setEditing(blankProduct((data.categories?.[0]?.items?.[0]?.id) ?? ""))}>
+                Add product
+              </button>
             </div>
 
             {(data.products ?? []).length === 0 ? <p className="muted">Nothing in the catalogue yet.</p> : (
@@ -288,11 +359,8 @@ function AdminPanel() {
                         {p.status === "ARCHIVED" ? "Archived" : p.stock === 0 ? "Sold out" : p.stock < 6 ? "Low" : "Live"}
                       </span></td>
                       <td style={{ whiteSpace: "nowrap" }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => setEditing({
-                          id: p.id, name: p.name, categoryId: p.categoryId, price: rupees(p.price), mrp: rupees(p.mrp),
-                          stock: p.stock, mukhi: p.mukhi ?? 5, artKind: p.artKind, artTone: p.artTone,
-                          description: p.desc ?? "", material: p.material, origin: p.origin,
-                        })}>Edit</button>{" "}
+                        <button className="btn btn-ghost btn-sm"
+                          onClick={() => setEditing(productToForm(p))}>Edit</button>{" "}
                         <button className="btn btn-ghost btn-sm" disabled={busy}
                           onClick={() => act(() => api.archiveProduct(p.id), `${p.name} archived`)}>Archive</button>
                       </td>
@@ -378,7 +446,10 @@ function AdminPanel() {
           <>
             <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
               <button className="btn btn-primary btn-sm"
-                onClick={() => setCouponForm({ code: "", type: "PERCENT", value: 10, minCart: 2000, usageLimit: 500, appliesToPuja: false })}>
+                onClick={() => setCouponForm({
+                  code: "", type: "PERCENT", value: 10, minCart: 2000, maxDiscount: 0,
+                  usageLimit: 500, perUserLimit: 1, appliesToPuja: false, active: true, expiresAt: "",
+                })}>
                 Create coupon
               </button>
             </div>
@@ -396,7 +467,16 @@ function AdminPanel() {
                         <td>{c.usedCount} / {c.usageLimit ?? "∞"}</td>
                         <td>{c.expiresAt ? new Date(c.expiresAt).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "No expiry"}</td>
                         <td><span className={`pill ${c.active ? "ok" : "bad"}`}>{c.active ? "Active" : "Paused"}</span></td>
-                        <td>
+                        <td style={{ whiteSpace: "nowrap" }}>
+                          <button className="btn btn-ghost btn-sm" onClick={() => setCouponForm({
+                            id: c.id, code: c.code, type: c.type,
+                            // Percent is stored as a plain number; every other type is paise.
+                            value: c.type === "PERCENT" ? c.value : rupees(c.value),
+                            minCart: rupees(c.minCart), maxDiscount: c.maxDiscount ? rupees(c.maxDiscount) : 0,
+                            usageLimit: c.usageLimit ?? 0, perUserLimit: c.perUserLimit ?? 1,
+                            appliesToPuja: c.appliesToPuja, active: c.active, usedCount: c.usedCount ?? 0,
+                            expiresAt: c.expiresAt ? String(c.expiresAt).slice(0, 10) : "",
+                          })}>Edit</button>{" "}
                           <button className="btn btn-ghost btn-sm" disabled={busy}
                             onClick={() => act(() => api.updateCoupon(c.id, { active: !c.active }), c.active ? "Coupon paused" : "Coupon activated")}>
                             {c.active ? "Pause" : "Activate"}
@@ -629,21 +709,78 @@ function AdminPanel() {
                 <select className="inp" value={editing.artTone} onChange={(e) => setEditing({ ...editing, artTone: e.target.value })}>
                   {["rudraksha", "tulsi", "sphatik", "ruby", "emerald", "amethyst", "gold", "saffronCloth", "cream"].map((k) => <option key={k}>{k}</option>)}
                 </select></label>
+              <label className="field"><span>GST rate (%)</span>
+                <input className="inp" type="number" step="0.01" value={editing.gstRate}
+                  onChange={(e) => setEditing({ ...editing, gstRate: +e.target.value })} /></label>
+              <label className="field"><span>Status</span>
+                <select className="inp" value={editing.status} onChange={(e) => setEditing({ ...editing, status: e.target.value })}>
+                  <option value="ACTIVE">Active — live on the site</option>
+                  <option value="DRAFT">Draft — hidden</option>
+                  <option value="ARCHIVED">Archived</option>
+                </select></label>
             </div>
 
             <label className="field"><span>Description</span>
-              <textarea className="inp" value={editing.description}
+              <textarea className="inp" rows={3} value={editing.description}
                 onChange={(e) => setEditing({ ...editing, description: e.target.value })} /></label>
 
-            <div style={{ display: "flex", gap: 12 }}>
-              <button className="btn btn-primary" disabled={busy || !editing.name || !editing.categoryId}
+            <label className="field"><span>Benefits — one per line</span>
+              <textarea className="inp" rows={3} value={editing.benefits}
+                placeholder={"Calms the nervous system\nSupports daily japa practice"}
+                onChange={(e) => setEditing({ ...editing, benefits: e.target.value })} /></label>
+
+            <div className="grid g2" style={{ gap: 0, columnGap: 18 }}>
+              <label className="field"><span>How to wear</span>
+                <textarea className="inp" rows={3} value={editing.howToWear}
+                  onChange={(e) => setEditing({ ...editing, howToWear: e.target.value })} /></label>
+              <label className="field"><span>Care notes</span>
+                <textarea className="inp" rows={3} value={editing.careNotes}
+                  onChange={(e) => setEditing({ ...editing, careNotes: e.target.value })} /></label>
+            </div>
+
+            <h3 style={{ margin: "18px 0 10px", fontSize: ".95rem" }}>Specifications</h3>
+            <div className="grid g2" style={{ gap: 0, columnGap: 18 }}>
+              <label className="field"><span>Material</span>
+                <input className="inp" value={editing.material}
+                  onChange={(e) => setEditing({ ...editing, material: e.target.value })} /></label>
+              <label className="field"><span>Origin</span>
+                <input className="inp" value={editing.origin}
+                  onChange={(e) => setEditing({ ...editing, origin: e.target.value })} /></label>
+              <label className="field"><span>Weight (grams)</span>
+                <input className="inp" type="number" value={editing.weightGrams}
+                  onChange={(e) => setEditing({ ...editing, weightGrams: +e.target.value })} /></label>
+              <label className="field"><span>Size / dimensions</span>
+                <input className="inp" value={editing.dimensions} placeholder="108 + 1 beads, 8 mm"
+                  onChange={(e) => setEditing({ ...editing, dimensions: e.target.value })} /></label>
+              <label className="field"><span>HSN code</span>
+                <input className="inp" value={editing.hsnCode}
+                  onChange={(e) => setEditing({ ...editing, hsnCode: e.target.value })} /></label>
+              <label className="field"><span>Badge</span>
+                <input className="inp" value={editing.badge} placeholder="Best seller, Rare, New…"
+                  onChange={(e) => setEditing({ ...editing, badge: e.target.value })} /></label>
+            </div>
+
+            <label className="field" style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <input type="checkbox" checked={editing.featured}
+                onChange={(e) => setEditing({ ...editing, featured: e.target.checked })} />
+              <span style={{ margin: 0 }}>Feature on the homepage</span>
+            </label>
+
+            <h3 style={{ margin: "18px 0 10px", fontSize: ".95rem" }}>Search listing</h3>
+            <div className="grid g2" style={{ gap: 0, columnGap: 18 }}>
+              <label className="field"><span>Meta title</span>
+                <input className="inp" value={editing.metaTitle} placeholder={editing.name}
+                  onChange={(e) => setEditing({ ...editing, metaTitle: e.target.value })} /></label>
+              <label className="field"><span>Meta description</span>
+                <input className="inp" value={editing.metaDescription}
+                  onChange={(e) => setEditing({ ...editing, metaDescription: e.target.value })} /></label>
+            </div>
+
+            <div style={{ display: "flex", gap: 12, marginTop: 8 }}>
+              <button className="btn btn-primary" disabled={busy || !editing.name.trim() || !editing.categoryId}
                 onClick={async () => {
                   const saved = await act(
-                    () => api.saveProduct({
-                      ...editing,
-                      price: Math.round(editing.price * 100),
-                      mrp: Math.round(editing.mrp * 100),
-                    }),
+                    () => api.saveProduct(formToProduct(editing)),
                     editing.id ? "Product updated" : "Product created and published",
                   );
                   if (saved) setEditing(null);
@@ -662,13 +799,14 @@ function AdminPanel() {
           <div className="scrim" onClick={() => setCouponForm(null)} />
           <div className="sheet" style={{ padding: 30, top: "16vh" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
-              <h2>Create coupon</h2>
+              <h2>{couponForm.id ? "Edit coupon" : "Create coupon"}</h2>
               <button className="icobtn" onClick={() => setCouponForm(null)} aria-label="Close">{I.x}</button>
             </div>
 
             <div className="grid g2" style={{ gap: 0, columnGap: 18 }}>
               <label className="field"><span>Code</span>
-                <input className="inp" value={couponForm.code}
+                {/* Once a code is in the wild and redeemed, renaming it would break every copy already shared. */}
+                <input className="inp" value={couponForm.code} disabled={couponForm.usedCount > 0}
                   onChange={(e) => setCouponForm({ ...couponForm, code: e.target.value.toUpperCase() })} /></label>
               <label className="field"><span>Type</span>
                 <select className="inp" value={couponForm.type} onChange={(e) => setCouponForm({ ...couponForm, type: e.target.value })}>
@@ -682,27 +820,63 @@ function AdminPanel() {
               <label className="field"><span>Minimum cart (₹)</span>
                 <input className="inp" type="number" value={couponForm.minCart}
                   onChange={(e) => setCouponForm({ ...couponForm, minCart: +e.target.value })} /></label>
-              <label className="field"><span>Usage limit</span>
+              <label className="field"><span>Max discount (₹) — 0 for no cap</span>
+                <input className="inp" type="number" value={couponForm.maxDiscount}
+                  onChange={(e) => setCouponForm({ ...couponForm, maxDiscount: +e.target.value })} /></label>
+              <label className="field"><span>Usage limit — 0 for unlimited</span>
                 <input className="inp" type="number" value={couponForm.usageLimit}
                   onChange={(e) => setCouponForm({ ...couponForm, usageLimit: +e.target.value })} /></label>
+              <label className="field"><span>Per-customer limit</span>
+                <input className="inp" type="number" min={1} value={couponForm.perUserLimit}
+                  onChange={(e) => setCouponForm({ ...couponForm, perUserLimit: +e.target.value })} /></label>
+              <label className="field"><span>Expires on — blank for never</span>
+                <input className="inp" type="date" value={couponForm.expiresAt}
+                  onChange={(e) => setCouponForm({ ...couponForm, expiresAt: e.target.value })} /></label>
               <label className="field" style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 26 }}>
                 <input type="checkbox" checked={couponForm.appliesToPuja}
                   onChange={(e) => setCouponForm({ ...couponForm, appliesToPuja: e.target.checked })} />
                 <span style={{ margin: 0 }}>Also valid on puja bookings</span>
               </label>
+              <label className="field" style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 26 }}>
+                <input type="checkbox" checked={couponForm.active}
+                  onChange={(e) => setCouponForm({ ...couponForm, active: e.target.checked })} />
+                <span style={{ margin: 0 }}>Active</span>
+              </label>
             </div>
 
-            <button className="btn btn-primary" disabled={busy || !couponForm.code}
-              onClick={async () => {
-                const ok = await act(() => api.createCoupon({
-                  ...couponForm,
-                  value: couponForm.type === "PERCENT" ? couponForm.value : Math.round(couponForm.value * 100),
-                  minCart: Math.round(couponForm.minCart * 100),
-                }), `${couponForm.code} created`);
-                if (ok) setCouponForm(null);
-              }}>
-              {busy ? "Creating…" : "Create coupon"}
-            </button>
+            {couponForm.id && (
+              <p className="muted" style={{ fontSize: ".8rem", marginBottom: 14 }}>
+                Redeemed {couponForm.usedCount} time{couponForm.usedCount === 1 ? "" : "s"} so far.
+                {couponForm.usedCount > 0 && " The code itself is locked because it is already in circulation."}
+              </p>
+            )}
+
+            <div style={{ display: "flex", gap: 12 }}>
+              <button className="btn btn-primary" disabled={busy || !couponForm.code}
+                onClick={async () => {
+                  // The API stores money as paise and percent as a plain number; convert at this one boundary.
+                  const body = {
+                    code: couponForm.code,
+                    type: couponForm.type,
+                    value: couponForm.type === "PERCENT" ? couponForm.value : Math.round(couponForm.value * 100),
+                    minCart: Math.round(couponForm.minCart * 100),
+                    maxDiscount: couponForm.maxDiscount ? Math.round(couponForm.maxDiscount * 100) : null,
+                    usageLimit: couponForm.usageLimit ? couponForm.usageLimit : null,
+                    perUserLimit: couponForm.perUserLimit || 1,
+                    appliesToPuja: couponForm.appliesToPuja,
+                    active: couponForm.active,
+                    expiresAt: couponForm.expiresAt ? new Date(couponForm.expiresAt).toISOString() : null,
+                  };
+                  const ok = await act(
+                    () => (couponForm.id ? api.updateCoupon(couponForm.id, body) : api.createCoupon(body)),
+                    couponForm.id ? `${couponForm.code} updated` : `${couponForm.code} created`,
+                  );
+                  if (ok) setCouponForm(null);
+                }}>
+                {busy ? "Saving…" : couponForm.id ? "Save changes" : "Create coupon"}
+              </button>
+              <button className="btn btn-ghost" onClick={() => setCouponForm(null)}>Cancel</button>
+            </div>
           </div>
         </>
       )}

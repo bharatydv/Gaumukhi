@@ -80,6 +80,53 @@ export function normPandit(p: any) {
   };
 }
 
+/**
+ * Testimonials come from approved reviews. The bundled fallback uses the older
+ * short keys (n/c/t/p), so accept both shapes rather than branching at the call site.
+ */
+/**
+ * Nav category tree. The API returns items as objects; the bundled CATEGORY_TREE
+ * uses bare strings. Both collapse to { group, items: [{ name, slug }] } here so
+ * the menus never have to know which one they got.
+ */
+export function normCategories(groups?: any[] | null) {
+  return (groups ?? []).map((g: any) => ({
+    group: g.group ?? g.groupName ?? "",
+    items: (g.items ?? []).map((c: any) =>
+      typeof c === "string"
+        ? { name: c, slug: c.toLowerCase().replace(/[^a-z0-9]+/g, "-"), productCount: null }
+        : { name: c.name, slug: c.slug, id: c.id, productCount: c.productCount ?? null },
+    ),
+  }));
+}
+
+export function normTestimonial(t: any) {
+  if (!t) return null;
+  return {
+    id: t.id ?? t.n ?? t.name,
+    name: t.name ?? t.n ?? "Verified buyer",
+    city: t.city ?? t.c ?? "",
+    text: t.text ?? t.t ?? "",
+    rating: Number(t.rating ?? 5),
+    product: t.product ?? t.p ?? "",
+  };
+}
+
+/** Journal cards. Same deal — API posts and the bundled BLOGS entries both land here. */
+export function normPost(b: any) {
+  if (!b) return null;
+  const mins = b.readMinutes ?? parseInt(String(b.d ?? ""), 10);
+  return {
+    slug: b.slug ?? null,
+    title: b.title ?? b.t ?? "",
+    excerpt: b.excerpt ?? b.x ?? "",
+    category: b.categoryName ?? b.c ?? "Journal",
+    readMinutes: Number.isFinite(mins) && mins > 0 ? mins : 5,
+    author: b.authorName ?? "",
+    publishedAt: b.publishedAt ?? null,
+  };
+}
+
 export function normOrder(o: any) {
   if (!o) return null;
   return {

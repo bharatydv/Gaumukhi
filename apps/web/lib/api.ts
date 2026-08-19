@@ -149,6 +149,7 @@ export const api = {
   // ── reviews & questions ──────────────────────────────────────
   reviews: (productId: string) => get<any[]>(`/reviews/product/${productId}`, [], 0),
   createReview: (b: Json) => send<any>("/reviews", "POST", b),
+  testimonials: (take = 6) => get<any[]>(`/reviews/testimonials?take=${take}`, null, 300),
   questions: (productId: string) => get<any[]>(`/reviews/questions/${productId}`, [], 60),
   askQuestion: (productId: string, body: string) => send<any>(`/reviews/questions/${productId}`, "POST", { body }),
 

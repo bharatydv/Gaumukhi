@@ -29,6 +29,9 @@ export class UpsertProductDto {
   @IsOptional() @IsString() origin?: string;
   @IsOptional() @IsString() material?: string;
   @IsOptional() @IsInt() weightGrams?: number;
+  @IsOptional() @IsString() dimensions?: string;
+  @IsOptional() @IsString() hsnCode?: string;
+  @IsOptional() @IsString() barcode?: string;
   @IsOptional() @IsString() artKind?: string;
   @IsOptional() @IsString() artTone?: string;
   @IsOptional() @IsString() badge?: string;

@@ -35,6 +35,33 @@ export class ReviewsService {
     });
   }
 
+  /**
+   * Homepage testimonials. These are just the strongest approved reviews —
+   * there is no separate testimonial table, so approving a review in the
+   * Reviews tab is what puts it on the front page.
+   */
+  async testimonials(take = 6) {
+    const rows = await this.prisma.review.findMany({
+      where: { status: ModerationStatus.APPROVED, rating: { gte: 4 }, body: { not: '' } },
+      orderBy: [{ rating: 'desc' }, { createdAt: 'desc' }],
+      take,
+      include: {
+        user: { select: { name: true, addresses: { select: { city: true }, take: 1 } } },
+        product: { select: { name: true } },
+        booking: { include: { puja: { select: { name: true } } } },
+      },
+    });
+
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.user?.name ?? 'Verified buyer',
+      city: r.user?.addresses?.[0]?.city ?? '',
+      text: r.body,
+      rating: r.rating,
+      product: r.product?.name ?? r.booking?.puja?.name ?? '',
+    }));
+  }
+
   listForProduct(productId: string) {
     return this.prisma.review.findMany({
       where: { productId, status: ModerationStatus.APPROVED },

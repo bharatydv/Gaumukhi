@@ -1,31 +1,43 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Art, I, LotusMark } from "./art";
-import { money, CATEGORY_TREE, PRODUCTS, PUJAS, PANDITS, TESTIMONIALS, BLOGS } from "../lib/seed-data";
+import { money, PRODUCTS, TESTIMONIALS, BLOGS } from "../lib/seed-data";
 import { Shop, useShop, Reveal, Stars, ProductCard, SkeletonCard } from "./shell";
 import { api } from "../lib/api";
-import { normProducts } from "../lib/normalise";
+import { normProducts, normTestimonial, normPost } from "../lib/normalise";
 
 
 /* ============================ HOME ============================ */
 
-function Home() {
+function Home({ products, testimonials, posts }: { products?: any[]; testimonials?: any[]; posts?: any[] } = {}) {
   const S = useShop();
-  const [loading, setLoading] = useState(true);
-  const [live, setLive] = useState<any[]>(PRODUCTS);
+  const [loading, setLoading] = useState(!products?.length);
+  // Prefilled from the server so the first paint is already the real catalogue.
+  // Never seeded with bundled data — that would show products nobody can buy.
+  const [live, setLive] = useState<any[]>(products ?? []);
+  const [quotes, setQuotes] = useState<any[]>(testimonials ?? []);
+  const [journal, setJournal] = useState<any[]>(posts ?? []);
 
-  // Live catalogue when the API is up; the bundled set is the fallback.
   useEffect(() => {
+    if (products?.length) return;
     let cancelled = false;
-    api.products({ take: 24, sort: "featured" }).then((r) => {
-      if (!cancelled && r?.items?.length) setLive(normProducts(r.items));
-      if (!cancelled) setLoading(false);
-    });
-    const t = setTimeout(() => setLoading(false), 900);
-    return () => { cancelled = true; clearTimeout(t); };
-  }, []);
 
-  const pick = (from: number, to: number) => (live.length >= to ? live.slice(from, to) : PRODUCTS.slice(from, to));
+    Promise.all([
+      api.products({ take: 24, sort: "featured" }),
+      api.testimonials(4),
+      api.posts(4),
+    ]).then(([p, t, b]) => {
+      if (cancelled) return;
+      setLive(p?.items?.length ? normProducts(p.items) : PRODUCTS);
+      setQuotes(t?.length ? t.map(normTestimonial) : TESTIMONIALS.map(normTestimonial));
+      setJournal(b?.length ? b.map(normPost) : BLOGS.map(normPost));
+      setLoading(false);
+    });
+
+    return () => { cancelled = true; };
+  }, [products]);
+
+  const pick = (from: number, to: number) => live.slice(from, to);
 
   const featured = [
     { c: "Rudraksha Mala", s: "108 + guru bead", k: "mala", t: "rudraksha", m: 5 },
@@ -209,13 +221,16 @@ function Home() {
               <p>Reviews are only published from confirmed orders and completed bookings.</p></div>
           </Reveal>
           <div className="grid g4">
-            {TESTIMONIALS.map((t, i) => (
-              <Reveal key={t.n} delay={i * 70} className="quote">
-                <Stars v={5} />
-                <p>“{t.t}”</p>
+            {quotes.map((t: any, i: number) => (
+              <Reveal key={t.id ?? i} delay={i * 70} className="quote">
+                <Stars v={t.rating} />
+                <p>“{t.text}”</p>
                 <div style={{ marginTop: "auto", display: "flex", gap: 12, alignItems: "center" }}>
-                  <span className="avatar">{t.n[0]}</span>
-                  <span><b style={{ fontSize: ".88rem" }}>{t.n}</b><br /><span className="muted" style={{ fontSize: ".74rem" }}>{t.c} · {t.p}</span></span>
+                  <span className="avatar">{(t.name ?? "?")[0]}</span>
+                  <span><b style={{ fontSize: ".88rem" }}>{t.name}</b><br />
+                    <span className="muted" style={{ fontSize: ".74rem" }}>
+                      {[t.city, t.product].filter(Boolean).join(" · ")}
+                    </span></span>
                 </div>
               </Reveal>
             ))}
@@ -231,15 +246,16 @@ function Home() {
           <button className="link-more" onClick={() => S.go("blog")}>All articles</button>
         </Reveal>
         <div className="grid g4">
-          {BLOGS.map((b, i) => (
-            <Reveal key={b.t} delay={i * 70} className="card" style={{ cursor: "pointer" }}>
+          {journal.map((b: any, i: number) => (
+            <Reveal key={b.slug ?? b.title} delay={i * 70} className="card" style={{ cursor: "pointer" }}
+              onClick={() => b.slug && S.go("blog", { post: b.slug })}>
               <div className="pc-media" style={{ aspectRatio: "3/2" }}>
                 <div style={{ position: "absolute", inset: "14%" }}><Art kind={i % 2 ? "book" : "bead"} tone={i % 2 ? "cream" : "rudraksha"} mukhi={i + 1} id={`b${i}`} /></div>
               </div>
               <div className="pc-body">
-                <span className="pc-cat">{b.c} · {b.d} read</span>
-                <h3 className="pc-name">{b.t}</h3>
-                <p className="muted" style={{ fontSize: ".84rem" }}>{b.x}</p>
+                <span className="pc-cat">{b.category} · {b.readMinutes} min read</span>
+                <h3 className="pc-name">{b.title}</h3>
+                <p className="muted" style={{ fontSize: ".84rem" }}>{b.excerpt}</p>
               </div>
             </Reveal>
           ))}
@@ -265,7 +281,7 @@ function Home() {
 
 /* ============================ SHOP ============================ */
 
-function ShopPage() {
+function ShopPage({ products }: { products?: any[] } = {}) {
   const S = useShop();
   const q = S.params;
   const [cat, setCat] = useState(q.cat || "All");
@@ -273,16 +289,19 @@ function ShopPage() {
   const [max, setMax] = useState(90000);
   const [mukhi, setMukhi] = useState([]);
   const [onlyStock, setOnlyStock] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [catalogue, setCatalogue] = useState<any[]>(PRODUCTS);
+  // Prefilled from the server means there is nothing to wait for on first paint.
+  const [loading, setLoading] = useState(!products?.length);
+  const [catalogue, setCatalogue] = useState<any[]>(products ?? []);
 
   useEffect(() => { setCat(q.cat || "All"); }, [q.cat]);
 
+  // Database is the catalogue. The bundled set only stands in if the API is unreachable.
   useEffect(() => {
+    if (products?.length) return;
     api.products({ take: 60 }).then((r) => {
-      if (r?.items?.length) setCatalogue(normProducts(r.items));
+      setCatalogue(r?.items?.length ? normProducts(r.items) : PRODUCTS);
     });
-  }, []);
+  }, [products]);
   useEffect(() => { setLoading(true); const t = setTimeout(() => setLoading(false), 420); return () => clearTimeout(t); }, [cat, sort, max, mukhi.length, onlyStock]);
 
   const list = useMemo(() => {
@@ -379,6 +398,9 @@ function ProductPage({ product }: { product?: any }) {
   const [pin, setPin] = useState("");
   const [eta, setEta] = useState(null);
   const [fbt, setFbt] = useState([true, true]);
+  // Backs "related" and the frequently-bought-together strip when the product
+  // payload does not carry its own related list.
+  const [alsoLive, setAlsoLive] = useState<any[]>([]);
   const [writing, setWriting] = useState(false);
   const [myRating, setMyRating] = useState(5);
   const [myReview, setMyReview] = useState("");
@@ -386,15 +408,26 @@ function ProductPage({ product }: { product?: any }) {
   const [busy, setBusy] = useState(false);
   const boxRef = useRef(null);
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); setView(0); setTab("Description"); setQty(1); }, [p?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.products({ take: 24 }).then((r) => {
+      if (!cancelled) setAlsoLive(r?.items?.length ? normProducts(r.items) : PRODUCTS);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   if (!p) return null;
 
   const off = Math.round(((p.mrp - p.price) / p.mrp) * 100);
   const views = ["Front", "Reverse", "360° view", "On-body video"];
+  const pool = alsoLive.filter((x: any) => x.id !== p.id);
   const related = p.related?.length
     ? p.related
-    : PRODUCTS.filter((x: any) => x.id !== p.id && (x.category === p.category || x.tone === p.tone)).slice(0, 4);
-  const bundle = [PRODUCTS[12], PRODUCTS[15]];
-  const bundleTotal = p.price + bundle.reduce((s, b, i) => s + (fbt[i] ? b.price : 0), 0);
+    : pool.filter((x: any) => x.category === p.category || x.tone === p.tone).slice(0, 4);
+  // Pair with two in-stock items from other categories rather than fixed positions.
+  const bundle = pool.filter((x: any) => x.category !== p.category && x.stock > 0).slice(0, 2);
+  const bundleTotal = p.price + bundle.reduce((s: number, b: any, i: number) => s + (fbt[i] ? b.price : 0), 0);
 
   const onMove = (e) => {
     const r = boxRef.current.getBoundingClientRect();
@@ -511,7 +544,8 @@ function ProductPage({ product }: { product?: any }) {
         </div>
       </div>
 
-      {/* frequently bought together */}
+      {/* frequently bought together — hidden until the catalogue gives us something to pair with */}
+      {bundle.length > 0 && (
       <section style={{ marginTop: 70 }}>
         <h2 style={{ marginBottom: 20 }}>Frequently bought together</h2>
         <div style={{ display: "flex", gap: 20, alignItems: "center", flexWrap: "wrap", background: "var(--surface)", border: "1px solid var(--line-2)", borderRadius: 16, padding: 24 }}>
@@ -533,10 +567,11 @@ function ProductPage({ product }: { product?: any }) {
           <div style={{ marginLeft: "auto" }}>
             <span className="muted" style={{ fontSize: ".78rem" }}>Bundle total</span>
             <div style={{ fontFamily: "var(--display)", fontSize: "1.6rem", margin: "4px 0 12px" }}>{money(bundleTotal)}</div>
-            <button className="btn btn-primary" onClick={() => { S.add(p); bundle.forEach((b, i) => fbt[i] && S.add(b)); }}>Add selected to bag</button>
+            <button className="btn btn-primary" onClick={() => { S.add(p); bundle.forEach((b: any, i: number) => fbt[i] && S.add(b)); }}>Add selected to bag</button>
           </div>
         </div>
       </section>
+      )}
 
       {/* tabs */}
       <section style={{ marginTop: 60 }}>
