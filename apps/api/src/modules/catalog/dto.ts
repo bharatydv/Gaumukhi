@@ -42,6 +42,44 @@ export class UpsertProductDto {
   @IsOptional() @IsString() metaDescription?: string;
 }
 
+/**
+ * A partial edit — "put this one on sale", "correct the stock" — carries only the
+ * fields that changed. UpsertProductDto demands name, categoryId, mrp and price on
+ * every call, which makes a one-field change impossible; this is the same shape with
+ * nothing required, and the service writes only what it is given.
+ */
+export class PatchProductDto {
+  @IsOptional() @IsString() name?: string;
+  @IsOptional() @IsString() categoryId?: string;
+  @IsOptional() @IsString() description?: string;
+  @IsOptional() @IsArray() benefits?: string[];
+  @IsOptional() @IsString() howToWear?: string;
+  @IsOptional() @IsString() careNotes?: string;
+  @IsOptional() @IsInt() mrp?: number;
+  @IsOptional() @IsInt() price?: number;
+  @IsOptional() gstRate?: number;
+  @IsOptional() @IsInt() mukhi?: number;
+  @IsOptional() @IsString() origin?: string;
+  @IsOptional() @IsString() material?: string;
+  @IsOptional() @IsInt() weightGrams?: number;
+  @IsOptional() @IsString() dimensions?: string;
+  @IsOptional() @IsString() hsnCode?: string;
+  @IsOptional() @IsString() barcode?: string;
+  @IsOptional() @IsString() artKind?: string;
+  @IsOptional() @IsString() artTone?: string;
+  @IsOptional() @IsString() badge?: string;
+  @IsOptional() @IsEnum(ProductStatus) status?: ProductStatus;
+  @IsOptional() @IsBoolean() featured?: boolean;
+  @IsOptional() @IsInt() @Min(0) stock?: number;
+  @IsOptional() @IsString() metaTitle?: string;
+  @IsOptional() @IsString() metaDescription?: string;
+}
+
+export class UpdateMediaDto {
+  @IsOptional() @IsString() alt?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) position?: number;
+}
+
 export class UpsertCategoryDto {
   @IsOptional() @IsString() id?: string;
   @IsString() name: string;

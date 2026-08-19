@@ -5,7 +5,6 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Shop, Header, Footer, CartDrawer, SearchOverlay, FloatingHelp } from "./shell";
 import { I } from "./art";
 import { api, payFor } from "../lib/api";
-import { PRODUCTS, CATEGORY_TREE } from "../lib/seed-data";
 import { normOrder, normBooking, normProducts, normCategories, toRupees } from "../lib/normalise";
 
 /** route key → URL, so child components keep calling S.go("shop", { cat }) unchanged. */
@@ -18,9 +17,11 @@ const ROUTES: Record<string, string> = {
 /**
  * One store for the whole app.
  *
- * Cart, wishlist and auth all talk to the API. When the API is unreachable the
- * same actions fall back to local state so the interface still behaves —
- * `S.online` tells any component whether what it sees is server-backed.
+ * Cart, wishlist, coupons and auth are the server's to decide — there is no local
+ * mirror of any of them. A price, a discount or a stock figure the database has not
+ * confirmed is never shown, because a bag that adds up to one number here and another
+ * at checkout is worse than a bag that refuses to open. When the API is unreachable
+ * `S.online` is false and the affected actions say so instead of pretending.
  */
 export function StoreProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -75,6 +76,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         category: i.category,
         kind: i.artKind,
         tone: i.artTone,
+        image: i.image ?? null,
         mukhi: i.mukhi,
         price: toRupees(i.unitPrice),
         mrp: toRupees(i.mrp),
@@ -104,7 +106,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       }
 
       const cats = await api.categories();
-      setCategories(normCategories(cats?.length ? cats : CATEGORY_TREE));
+      setCategories(normCategories(cats ?? []));
 
       setReady(true);
     })();
@@ -127,13 +129,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return pathname?.startsWith("/product") ? "product" : "home";
   }, [pathname]);
 
-  // Local totals mirror the server's rules, so an offline cart adds up identically.
-  const subtotal = cart.reduce((s, l) => s + l.price * l.qty, 0);
-  const localDiscount =
-    coupon === "SHRAVAN20" ? Math.min(Math.round(subtotal * 0.2), 300000)
-      : coupon === "FIRST500" && subtotal >= 250000 ? 50000
-        : 0;
-  const discount = serverTotals?.discount ?? localDiscount;
+  // Line prices come from the server cart; the discount is whatever the coupon
+  // engine awarded. Nothing is recomputed here — the server is the only authority
+  // on what this bag costs.
+  const subtotal = serverTotals?.subtotal ?? cart.reduce((s, l) => s + l.price * l.qty, 0);
+  const discount = serverTotals?.discount ?? 0;
 
   const S: any = {
     theme, route, params, product, cart, cartId, wish, recent, user,
@@ -160,29 +160,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     add: async (p: any, qty = 1) => {
       if (p.stock === 0) { toast("Out of stock — we will notify you on restock", true); return; }
 
-      if (online) {
-        const res = await api.addToCart(String(p.id), qty);
-        if (!res.ok) { toast(res.message!, true); return; }
-        absorbCart(res.data);
-      } else {
-        setCart((c) => {
-          const i = c.findIndex((l) => l.id === p.id);
-          if (i > -1) return c.map((l, j) => (j === i ? { ...l, qty: l.qty + qty } : l));
-          return [...c, { ...p, key: String(p.id), qty }];
-        });
-      }
+      if (!online) { toast("Cannot reach the server, so your bag cannot be saved yet", true); return; }
+
+      const res = await api.addToCart(String(p.id), qty);
+      if (!res.ok) { toast(res.message!, true); return; }
+      absorbCart(res.data);
       setCartOpen(true);
       toast(`${p.name} added to your bag`);
     },
 
     setQty: async (key: string, q: number) => {
-      if (online) {
-        const res = q <= 0 ? await api.removeCartItem(key) : await api.setCartQty(key, q);
-        if (!res.ok) { toast(res.message!, true); return; }
-        absorbCart(res.data);
-        return;
-      }
-      setCart((c) => (q <= 0 ? c.filter((l) => l.key !== key) : c.map((l) => (l.key === key ? { ...l, qty: q } : l))));
+      if (!online) { toast("Cannot reach the server, so your bag cannot be changed", true); return; }
+      const res = q <= 0 ? await api.removeCartItem(key) : await api.setCartQty(key, q);
+      if (!res.ok) { toast(res.message!, true); return; }
+      absorbCart(res.data);
     },
 
     setGiftWrap: async (on: boolean) => {
@@ -196,17 +187,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     applyCoupon: async (code: string) => {
       if (!code?.trim()) { toast("Enter a coupon code first", true); return false; }
 
-      if (online) {
-        const res = await api.applyCoupon(code.trim().toUpperCase());
-        if (!res.ok) { toast(res.message!, true); return false; }
-        absorbCart(res.data);
-        toast(`${code.toUpperCase()} applied`);
-        return true;
-      }
+      // Only the coupon engine decides whether a code is live, what it is worth and
+      // whether this cart qualifies. Guessing here is how a paused coupon keeps paying out.
+      if (!online) { toast("Cannot reach the server to check that code", true); return false; }
 
-      const valid = ["SHRAVAN20", "FIRST500"].includes(code.trim().toUpperCase());
-      if (!valid) { toast("That coupon is not valid or has expired", true); return false; }
-      setCoupon(code.trim().toUpperCase());
+      const res = await api.applyCoupon(code.trim().toUpperCase());
+      if (!res.ok) { toast(res.message!, true); return false; }
+      absorbCart(res.data);
       toast(`${code.toUpperCase()} applied`);
       return true;
     },
@@ -352,7 +339,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     addBooking: (b: any) => setBookings((x) => [b, ...x]),
 
     categories,
-    seedProducts: PRODUCTS,
     normProducts,
   };
 
@@ -377,10 +363,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
               padding: "11px 14px", fontSize: ".78rem", color: "var(--ink-2)", boxShadow: "var(--shadow)",
             }}
           >
-            <b style={{ color: "var(--ink)" }}>Demo data</b>
+            <b style={{ color: "var(--ink)" }}>Server unreachable</b>
             <br />
-            The API is not reachable, so prices and stock come from the bundled catalogue. Sign-in, checkout and
-            booking need the server running.
+            Prices, stock and offers could not be loaded. Nothing shown is priced &mdash; the bag, checkout and
+            booking stay closed until the connection is back.
           </div>
         )}
 

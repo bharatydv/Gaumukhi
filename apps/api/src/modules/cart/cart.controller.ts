@@ -1,14 +1,21 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Request } from 'express';
 import { CartService } from './cart.service';
 import { Public, SessionId } from '../../common/decorators';
+import { OptionalJwtAuthGuard } from '../../common/guards';
 
 /**
- * Cart works signed-in or anonymous. The web app sets an `dv_session`
- * cookie for guests; on login the guest cart is merged into the user's.
+ * Cart works signed-in or anonymous. Guests are keyed by the `x-session-id`
+ * header the web client sends (or a `dv_session` cookie); on login the guest
+ * cart is merged into the user's.
+ *
+ * OptionalJwtAuthGuard is what makes the signed-in half work: these routes are
+ * public, so without it Passport never runs and req.user is always undefined —
+ * every cart would be filed under the anonymous session even after login.
  */
 @ApiTags('cart')
+@UseGuards(OptionalJwtAuthGuard)
 @Controller('cart')
 export class CartController {
   constructor(private cart: CartService) {}

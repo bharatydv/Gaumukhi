@@ -1,9 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import { AreaChart, Area, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import { Art, I, LotusMark } from "./art";
-import { money } from "../lib/seed-data";
+import { Art, ProductArt, I, LotusMark } from "./art";
+import { money } from "../lib/format";
 import { useShop, Stars } from "./shell";
 import { api } from "../lib/api";
 
@@ -83,6 +83,104 @@ const formToProduct = (f: any) => ({
   metaTitle: f.metaTitle || undefined,
   metaDescription: f.metaDescription || undefined,
 });
+
+
+/**
+ * Product photography, managed where the product is.
+ *
+ * Uploads go straight to the API and come back as saved rows, so what the admin sees
+ * here is what the storefront will serve — there is no local preview pretending a file
+ * was stored. A product with no photo is a normal state, not an error: the storefront
+ * falls back to its drawn artwork.
+ */
+function ProductImages({ product, onChange }: { product: any; onChange: () => void }) {
+  const S = useShop();
+  const [shots, setShots] = useState<any[]>(product.media ?? []);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement | null>(null);
+
+  const refresh = useCallback(async () => {
+    const rows = await api.productMedia(product.id);
+    setShots(rows ?? []);
+    onChange();
+  }, [product.id, onChange]);
+
+  const pick = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setBusy(true);
+    for (const file of Array.from(files)) {
+      const res = await api.uploadProductImage(product.id, file, product.name);
+      if (!res.ok) { S.toast(res.message!, true); break; }
+    }
+    setBusy(false);
+    if (fileRef.current) fileRef.current.value = "";
+    await refresh();
+    S.toast("Photos uploaded");
+  };
+
+  const remove = async (id: string) => {
+    setBusy(true);
+    const res = await api.deleteProductImage(id);
+    setBusy(false);
+    if (!res.ok) { S.toast(res.message!, true); return; }
+    await refresh();
+    S.toast("Photo removed");
+  };
+
+  // Position 0 is the image every listing card shows, so promoting one is the whole
+  // ordering story most shops need.
+  const makePrimary = async (id: string) => {
+    setBusy(true);
+    const rest = shots.filter((m) => m.id !== id);
+    await api.updateProductImage(id, { position: 0 });
+    await Promise.all(rest.map((m, i) => api.updateProductImage(m.id, { position: i + 1 })));
+    setBusy(false);
+    await refresh();
+    S.toast("Primary photo set");
+  };
+
+  return (
+    <>
+      <h3 style={{ margin: "18px 0 10px", fontSize: ".95rem" }}>Photos</h3>
+      <p className="muted" style={{ fontSize: ".78rem", marginTop: -4, marginBottom: 12 }}>
+        JPEG, PNG, WebP or AVIF, up to 5 MB each. The first photo is the one shown on listing
+        cards; with none uploaded the storefront draws its own artwork instead.
+      </p>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 12 }}>
+        {shots.map((m, i) => (
+          <div key={m.id} style={{ width: 104 }}>
+            <div style={{ position: "relative", width: 104, height: 104, borderRadius: 10, overflow: "hidden", border: "1px solid var(--line)", background: "var(--surface-2)" }}>
+              <img src={m.url} alt={m.alt || product.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              {i === 0 && (
+                <span className="tag gold" style={{ position: "absolute", left: 6, top: 6, fontSize: ".6rem" }}>Primary</span>
+              )}
+            </div>
+            <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
+              {i > 0 && (
+                <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => makePrimary(m.id)} style={{ flex: 1 }}>
+                  Primary
+                </button>
+              )}
+              <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => remove(m.id)} style={{ flex: 1 }}>
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+        {shots.length === 0 && (
+          <p className="muted" style={{ fontSize: ".82rem" }}>No photos yet — the drawn artwork is being used.</p>
+        )}
+      </div>
+
+      <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp,image/avif,image/gif" multiple
+        style={{ display: "none" }} onChange={(e) => pick(e.target.files)} />
+      <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => fileRef.current?.click()}>
+        {busy ? "Uploading…" : "Upload photos"}
+      </button>
+    </>
+  );
+}
 
 const statusPill = (s: string) =>
   /DELIVERED|PAID|APPROVED|COMPLETED|CONFIRMED|ACTIVE/i.test(s) ? "ok"
@@ -348,7 +446,7 @@ function AdminPanel() {
                   {data.products.map((p: any) => (
                     <tr key={p.id}>
                       <td><span style={{ width: 40, height: 40, borderRadius: 8, overflow: "hidden", background: "var(--surface-2)", display: "block" }}>
-                        <Art kind={p.artKind} tone={p.artTone} mukhi={p.mukhi} id={`a${p.id}`} />
+                        <ProductArt src={p.image} alt={p.name} kind={p.artKind} tone={p.artTone} mukhi={p.mukhi} id={`a${p.id}`} />
                       </span></td>
                       <td><b>{p.name}</b></td>
                       <td className="muted">{p.sku}</td>
@@ -765,6 +863,17 @@ function AdminPanel() {
                 onChange={(e) => setEditing({ ...editing, featured: e.target.checked })} />
               <span style={{ margin: 0 }}>Feature on the homepage</span>
             </label>
+
+            {editing.id ? (
+              <ProductImages product={editing} onChange={load} />
+            ) : (
+              <>
+                <h3 style={{ margin: "18px 0 10px", fontSize: ".95rem" }}>Photos</h3>
+                <p className="muted" style={{ fontSize: ".82rem", marginTop: -4 }}>
+                  Create the product first, then reopen it to upload photos.
+                </p>
+              </>
+            )}
 
             <h3 style={{ margin: "18px 0 10px", fontSize: ".95rem" }}>Search listing</h3>
             <div className="grid g2" style={{ gap: 0, columnGap: 18 }}>

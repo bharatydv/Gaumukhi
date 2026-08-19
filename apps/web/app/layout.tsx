@@ -61,13 +61,11 @@ const organisationSchema = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en-IN">
-      <head>
+      <body>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organisationSchema) }}
         />
-      </head>
-      <body>
         <Suspense fallback={null}>
           <StoreProvider>{children}</StoreProvider>
         </Suspense>

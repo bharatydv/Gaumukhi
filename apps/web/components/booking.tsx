@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Art, I, LotusMark } from "./art";
-import { money, PUJAS, PANDITS, BLOGS } from "../lib/seed-data";
+import { Art, ProductArt, I, LotusMark } from "./art";
+import { money } from "../lib/format";
 import { api } from "../lib/api";
 import { normPuja, normPandit, normPost } from "../lib/normalise";
 import { Shop, useShop, Reveal, Stars, ProductCard, SkeletonCard } from "./shell";
@@ -13,13 +13,13 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MUHURAT: Record<number, string> = { 6: "Amrit", 8: "Shubh", 11: "Amrit", 14: "Labh", 18: "Chal", 21: "Shubh" };
 const dateKey = (d: Date) => d.toISOString().slice(0, 10);
 
-function BookPuja() {
+function BookPuja({ initialPujas = [], initialPandits = [] }: { initialPujas?: any[]; initialPandits?: any[] }) {
   const S = useShop();
   const [step, setStep] = useState(0);
-  // Both start empty and are filled from the database; the bundled lists are
-  // only substituted if the API fails to answer.
-  const [pujas, setPujas] = useState<any[]>([]);
-  const [pandits, setPandits] = useState<any[]>([]);
+  // Seeded from the server render so step one is populated on first paint, then
+  // refreshed client-side as the shopper narrows by date, language and puja.
+  const [pujas, setPujas] = useState<any[]>(initialPujas);
+  const [pandits, setPandits] = useState<any[]>(initialPandits);
   const [loadingPandits, setLoadingPandits] = useState(false);
 
   const [puja, setPuja] = useState<any>(null);
@@ -43,23 +43,15 @@ function BookPuja() {
 
   useEffect(() => { window.scrollTo({ top: 0, behavior: "smooth" }); }, [step]);
 
-  // Catalogue of pujas, live when the API is up.
+  // The puja catalogue is whatever the admin has published — no bundled copy.
   useEffect(() => {
     api.pujas().then((rows) => {
-      if (rows?.length) {
-        const mapped = rows.map(normPuja);
-        setPujas(mapped);
-        const wanted = S.params.puja;
-        if (wanted) {
-          const hit = mapped.find((p: any) => p.slug === wanted || p.id === wanted);
-          if (hit) { setPuja(hit); setStep(1); }
-        }
-      } else {
-        setPujas(PUJAS);
-        if (S.params.puja) {
-          const hit = PUJAS.find((p: any) => p.id === S.params.puja);
-          if (hit) { setPuja(hit); setStep(1); }
-        }
+      const mapped = (rows ?? []).map(normPuja);
+      setPujas(mapped);
+      const wanted = S.params.puja;
+      if (wanted) {
+        const hit = mapped.find((p: any) => p.slug === wanted || p.id === wanted);
+        if (hit) { setPuja(hit); setStep(1); }
       }
     });
     if (S.user) api.addresses().then((rows) => {
@@ -75,7 +67,7 @@ function BookPuja() {
     setLoadingPandits(true);
     api.pandits({ date: dateKey(date), language: lang, pujaId: puja?.id })
       .then((rows) => {
-        setPandits(rows?.length ? rows.map(normPandit) : PANDITS.filter((p: any) => p.langs.includes(lang)));
+        setPandits((rows ?? []).map(normPandit));
         setLoadingPandits(false);
       });
   }, [step, date, lang, puja?.id]);
@@ -738,7 +730,7 @@ function Checkout() {
             {S.cart.map((l: any) => (
               <div key={l.key} style={{ display: "flex", gap: 12, alignItems: "center" }}>
                 <span style={{ width: 46, height: 46, borderRadius: 9, overflow: "hidden", background: "var(--surface-2)", flexShrink: 0 }}>
-                  <Art kind={l.kind} tone={l.tone} mukhi={l.mukhi} id={`co${l.key}`} />
+                  <ProductArt src={l.image} alt={l.name} kind={l.kind} tone={l.tone} mukhi={l.mukhi} id={`co${l.key}`} />
                 </span>
                 <span style={{ flex: 1, fontSize: ".84rem" }}>{l.name} <span className="muted">× {l.qty}</span></span>
                 <b style={{ fontSize: ".86rem" }}>{money(l.price * l.qty)}</b>
@@ -1250,7 +1242,7 @@ function Blog({ posts: initial }: { posts?: any[] } = {}) {
   useEffect(() => {
     if (initial?.length) return;
     api.posts(24).then((rows) => {
-      setPosts(rows?.length ? rows.map(normPost) : BLOGS.map(normPost));
+      setPosts((rows ?? []).map(normPost));
     });
   }, [initial]);
 

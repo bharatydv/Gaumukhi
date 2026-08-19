@@ -13,6 +13,36 @@ const TIMEOUT_MS = Number(process.env.API_TIMEOUT_MS || 8000);
 
 type Json = Record<string, any>;
 
+/**
+ * Anonymous shoppers need an identity before they have an account, or the server
+ * has nothing to hang a cart on. We mint one in the browser and send it as
+ * `x-session-id` on every call — a header rather than a cookie so it survives the
+ * API living on a different domain in production, where a third-party cookie would
+ * be dropped. On sign-in the server merges this cart into the account's.
+ */
+const SESSION_KEY = "dv_session";
+
+function sessionId(): string | null {
+  if (typeof window === "undefined") return null; // server render: no cart to carry
+  try {
+    let id = window.localStorage.getItem(SESSION_KEY);
+    if (!id) {
+      id = (window.crypto?.randomUUID?.() ??
+        `s_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`);
+      window.localStorage.setItem(SESSION_KEY, id);
+    }
+    return id;
+  } catch {
+    return null; // private mode with storage denied — the call still works, just unkeyed
+  }
+}
+
+/** Headers every request carries: JSON plus the guest-cart identity. */
+function headers(): Record<string, string> {
+  const sid = sessionId();
+  return { "Content-Type": "application/json", ...(sid ? { "x-session-id": sid } : {}) };
+}
+
 export interface Result<T> {
   ok: boolean;
   data: T | null;
@@ -20,14 +50,20 @@ export interface Result<T> {
   status?: number;
 }
 
-/** Read helper — returns the payload or the fallback, never throws. */
+/**
+ * Read helper — returns the payload or the fallback, never throws.
+ *
+ * `revalidate = 0` means no cache at all, not "revalidate immediately": anything
+ * carrying a price or a stock count must be read fresh, or the admin changes it and
+ * the shop keeps selling yesterday's number until the window expires.
+ */
 async function get<T>(path: string, fallback: T | null = null, revalidate = 60): Promise<T | null> {
   try {
     const res = await fetch(`${BASE}${path}`, {
       credentials: "include",
       signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: { "Content-Type": "application/json" },
-      next: { revalidate } as any,
+      headers: headers(),
+      ...(revalidate === 0 ? { cache: "no-store" as const } : { next: { revalidate } as any }),
     });
     if (!res.ok) return fallback;
     return (await res.json()) as T;
@@ -43,7 +79,7 @@ async function send<T>(path: string, method: string, body?: Json): Promise<Resul
       method,
       credentials: "include",
       signal: AbortSignal.timeout(TIMEOUT_MS),
-      headers: { "Content-Type": "application/json" },
+      headers: headers(),
       ...(body ? { body: JSON.stringify(body) } : {}),
       cache: "no-store",
     });
@@ -68,6 +104,45 @@ async function send<T>(path: string, method: string, body?: Json): Promise<Resul
   }
 }
 
+/**
+ * Multipart upload. Deliberately separate from send(): a file post must let the
+ * browser set its own Content-Type with the multipart boundary, and the JSON header
+ * send() applies would make the server reject the body.
+ */
+async function upload<T>(path: string, file: File, fields: Json = {}): Promise<Result<T>> {
+  try {
+    const form = new FormData();
+    form.append("file", file);
+    for (const [k, v] of Object.entries(fields)) if (v != null) form.append(k, String(v));
+
+    const sid = sessionId();
+    const res = await fetch(`${BASE}${path}`, {
+      method: "POST",
+      credentials: "include",
+      signal: AbortSignal.timeout(60_000), // photographs are slower than JSON
+      headers: sid ? { "x-session-id": sid } : undefined,
+      body: form,
+    });
+
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) {
+      const message = Array.isArray(payload?.message)
+        ? payload.message[0]
+        : payload?.message || "That image could not be uploaded.";
+      return { ok: false, data: null, message, status: res.status };
+    }
+    return { ok: true, data: payload as T, status: res.status };
+  } catch (e: any) {
+    const slow = e?.name === "TimeoutError" || e?.name === "AbortError";
+    return {
+      ok: false,
+      data: null,
+      message: slow ? "The upload timed out. Try a smaller image." : "Network error while uploading.",
+      status: 0,
+    };
+  }
+}
+
 const qs = (q: Json) =>
   new URLSearchParams(
     Object.entries(q).filter(([, v]) => v !== undefined && v !== null && v !== "") as [string, string][],
@@ -75,12 +150,12 @@ const qs = (q: Json) =>
 
 export const api = {
   // ── catalog ──────────────────────────────────────────────────
-  categories: () => get<Array<{ group: string; items: any[] }>>("/catalog/categories", null, 300),
+  categories: () => get<Array<{ group: string; items: any[] }>>("/catalog/categories", null, 0),
   products: (q: Json = {}) => {
     const s = qs(q);
-    return get<{ items: any[]; nextCursor: string | null }>(`/catalog/products${s ? `?${s}` : ""}`);
+    return get<{ items: any[]; nextCursor: string | null }>(`/catalog/products${s ? `?${s}` : ""}`, null, 0);
   },
-  product: (slug: string) => get<any>(`/catalog/products/${slug}`, null, 600),
+  product: (slug: string) => get<any>(`/catalog/products/${slug}`, null, 0),
   verifyCertificate: (number: string) => get<any>(`/catalog/verify/${number}`, null, 3600),
 
   // ── auth ─────────────────────────────────────────────────────
@@ -132,7 +207,7 @@ export const api = {
   settleSandbox: (paymentId: string) => send<any>("/payments/sandbox/settle", "POST", { paymentId }),
 
   // ── puja ─────────────────────────────────────────────────────
-  pujas: () => get<any[]>("/puja/pujas", null, 300),
+  pujas: () => get<any[]>("/puja/pujas", null, 0),
   pandits: (q: Json = {}) => {
     const s = qs(q);
     return get<any[]>(`/puja/pandits${s ? `?${s}` : ""}`, null, 0);
@@ -181,7 +256,15 @@ export const api = {
   adminProducts: (q?: string) => get<any[]>(`/catalog/admin/products${q ? `?q=${encodeURIComponent(q)}` : ""}`, [], 0),
   saveProduct: (b: Json) => send<any>("/catalog/products", "POST", b),
   archiveProduct: (id: string) => send<any>(`/catalog/products/${id}`, "DELETE"),
+  patchProduct: (id: string, b: Json) => send<any>(`/catalog/products/${id}`, "PATCH", b),
   saveCategory: (b: Json) => send<any>("/catalog/categories", "POST", b),
+
+  // ── product photography ──────────────────────────────────────
+  productMedia: (productId: string) => get<any[]>(`/catalog/products/${productId}/media`, [], 0),
+  uploadProductImage: (productId: string, file: File, alt?: string) =>
+    upload<any>(`/catalog/products/${productId}/media`, file, { alt }),
+  updateProductImage: (mediaId: string, b: Json) => send<any>(`/catalog/media/${mediaId}`, "PATCH", b),
+  deleteProductImage: (mediaId: string) => send<any>(`/catalog/media/${mediaId}`, "DELETE"),
   adminOrders: (q: Json = {}) => get<any[]>(`/orders/admin/all?${qs(q)}`, [], 0),
   setOrderStatus: (id: string, status: string) => send<any>(`/orders/admin/${id}/status`, "PATCH", { status }),
   approveRefund: (id: string) => send<any>(`/orders/admin/refunds/${id}/approve`, "POST"),

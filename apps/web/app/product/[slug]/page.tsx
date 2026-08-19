@@ -1,29 +1,20 @@
 import type { Metadata } from "next";
 import { ProductPage } from "../../../components/storefront";
 import { api } from "../../../lib/api";
-import { PRODUCTS } from "../../../lib/seed-data";
 import { normProduct } from "../../../lib/normalise";
 
-export const revalidate = 600;
-
 /**
- * Pre-build the catalogue when the API is reachable. If it is not — CI without a
- * database, for instance — return nothing and let every product render on demand,
- * rather than stalling the build on a connection that will never answer.
+ * Rendered per request. A product page states a price and an availability, and both
+ * are answerable only by the database at the moment someone asks — pre-building them
+ * means shipping a promise the warehouse may no longer be able to keep.
  */
-export const dynamicParams = true;
-
-export async function generateStaticParams() {
-  const res = await api.products({ take: 60 });
-  if (!res?.items?.length) return [];
-  return res.items.map((p: any) => ({ slug: p.slug }));
-}
+export const revalidate = 0;
 
 async function load(slug: string) {
-  const live = await api.product(slug);
   // Live payloads are in paise and use API field names; normalise once, here.
-  if (live) return normProduct(live);
-  return PRODUCTS.find((p: any) => p.slug === slug) ?? null;
+  // If the catalogue cannot answer, the page 404s rather than inventing a price.
+  const live = await api.product(slug);
+  return live ? normProduct(live) : null;
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {

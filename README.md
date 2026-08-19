@@ -118,6 +118,12 @@ Fourteen modules, 40 Prisma models. The parts worth pointing at:
 
 **Reviews come only from buyers.** `reviews.create` checks for a paid `OrderItem` (or a `COMPLETED` booking) before it will accept anything, and one per person per product. Approval recomputes the product and pandit aggregates, which is what keeps the `AggregateRating` in the page's structured data honest.
 
+**Product photography is data, not a deploy.** The admin uploads through `POST /catalog/products/:id/media`; `StorageService` writes the file (local disk under `UPLOAD_DIR`, served at `/uploads/*`, or straight to S3 once real credentials are present) and stores only the key, with the URL derived at read time. Uploads are validated by MIME type and size, and the stored filename is always ours — a client-supplied name is untrusted input. Deleting a row deletes the file.
+
+**The cart is keyed by `x-session-id` or the signed-in user.** The web client mints a session id and sends it as a header, which survives the API being on another domain where a third-party cookie would not. Cart routes run `OptionalJwtAuthGuard`, so the same request binds to an account when there is one, and `auth` merges the guest cart on sign-in — a bag filled before logging in follows the shopper through checkout.
+
+**Anything that moves sellable stock drops the catalogue cache.** Reserving at checkout, decrementing on payment, releasing a failed hold, an admin stock adjustment and a product edit all call `catalog.invalidate`. Sellable stock is `onHand - reserved`; leaving that cached is how a shop oversells.
+
 **Every admin mutation writes an audit row** with actor, entity and a JSON diff. Refunds above ₹5,000 refuse a `SUPPORT` role and need a manager.
 
 Scheduled work lives in `puja.scheduler.ts`: hold expiry every minute, T-48h and T-2h reminders every thirty, booking close-out hourly, abandoned-cart recovery hourly.
@@ -126,9 +132,11 @@ Scheduled work lives in `puja.scheduler.ts`: hold expiry every minute, T-48h and
 
 The storefront, Book Puja wizard, account, admin console and pandit console, split into typed client modules and wired to the API through `lib/api.ts`.
 
-Every API call is fail-soft with a 5-second timeout: if the backend is down the UI falls back to bundled seed data instead of erroring. That is deliberate — the frontend stays demonstrable on its own, and a slow API never holds a render hostage.
+**Nothing is invented client-side.** There is no bundled catalogue, no local coupon table and no offline cart. Prices, stock, categories, pujas, pandits and discounts are read from the API or not shown at all — a shop that quotes a number the database did not confirm is worse than a shop that says it cannot reach the server, which is exactly what it now says. Calls are still fail-soft with a timeout, but a failure yields an empty state, never a plausible-looking substitute.
 
-Product imagery is generated SVG (`components/art.tsx`) — beads drawn with real mukhi lines, malas as 108-bead rings, garments and yantras as geometry. No stock photos, no broken images, correct in dark mode, and no layout shift.
+**Prices and stock are read per request.** `/`, `/shop`, `/product/[slug]` and `/puja` render dynamically and their catalogue fetches are `no-store`, so an admin edit is live on the next page load. Content that carries no price — the journal, static pages, banners — keeps its ISR window.
+
+Product imagery is a photograph when one has been uploaded and generated SVG (`components/art.tsx`) when it has not — beads drawn with real mukhi lines, malas as 108-bead rings, garments and yantras as geometry. `ProductArt` picks between them, and falls back to the artwork if the image itself fails to load, so a half-photographed catalogue still looks finished and a shopper never meets a torn-image icon.
 
 **SEO / GEO.** Product pages emit `Product` + `Offer` + `AggregateRating` + `BreadcrumbList`; the puja page emits `FAQPage` + `Service`; contact emits `LocalBusiness`; the layout emits `Organization`. Sitemap and robots are generated routes. `/verify/{number}` is a public certificate lookup, so a buyer — or an assistant asked "is this certificate real" — has a URL that resolves. `public/llms.txt` states plainly what we can be cited for.
 
@@ -199,14 +207,14 @@ and refunds — those need a real gateway round trip rather than the sandbox set
 
 Named plainly, so nothing reads as done when it is not:
 
-- **S3 uploads.** `Media.key` and `Certificate.fileKey` are modelled and referenced; the presigned-URL service is not written. Product imagery is SVG, so nothing is blocked by this today.
+- **S3 uploads.** Product media upload, storage, listing, reordering and deletion are built and run on local disk. `StorageService` has the S3 branch behind the same interface, but it needs `npm i @aws-sdk/client-s3` in `apps/api` and real credentials before it will run — with none set the driver stays local. `Certificate.fileKey` still has no upload path.
 - **Invoice and receipt PDFs.** `Invoice` rows are created with real numbers; rendering to PDF is a stub.
 - **Notification providers.** `NotificationsService` has the fan-out, templates and channel routing. SES, MSG91 and WhatsApp Cloud API calls are stubbed and log in development — drop in credentials and the four methods.
 - **Shiprocket.** Shipment rows, AWBs and status transitions exist; the carrier API call is not wired.
 - **Meilisearch.** Search runs on Postgres `ILIKE`, which is fine to a few thousand SKUs and will need replacing after that.
 - **Multi-currency and Hindi content.** `hreflang` is declared, the copy is not translated.
 - **Tests.** Vitest is configured; no suites written. The booking lock and the webhook handler are where I would start.
-- **Guest checkout.** The cart works signed-out, but placing an order requires sign-in; the merge-on-login path exists in `cart.service.ts` and is not yet called from the auth controller.
+- **Guest checkout.** The cart works signed-out and merges into the account on sign-in, but placing the order itself still requires an account.
 - **Blog article pages.** `/blog` lists posts from the API; individual `/blog/[slug]` routes are not built.
 
 ## Next

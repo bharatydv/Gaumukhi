@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Art, I, LotusMark } from "./art";
-import { money, PRODUCTS, PUJAS } from "../lib/seed-data";
+import { Art, ProductArt, I, LotusMark } from "./art";
+import { money } from "../lib/format";
 import { api } from "../lib/api";
 import { normProducts, normPuja } from "../lib/normalise";
 
@@ -169,7 +169,7 @@ function SearchOverlay() {
   // Suggestions for the empty state, so "recently viewed" is never invented.
   useEffect(() => {
     api.products({ sort: "best", take: 4 }).then((r) => {
-      setPopular(r?.items?.length ? normProducts(r.items) : PRODUCTS.slice(0, 4));
+      setPopular(normProducts(r?.items ?? []));
     });
   }, []);
 
@@ -183,11 +183,9 @@ function SearchOverlay() {
       const [products, pujas] = await Promise.all([api.products({ q: term, take: 6 }), api.pujas()]);
       if (cancelled) return;
 
-      setHits(products?.items?.length
-        ? normProducts(products.items)
-        : PRODUCTS.filter((p) => (p.name + p.category).toLowerCase().includes(term.toLowerCase())).slice(0, 6));
+      setHits(normProducts(products?.items ?? []));
 
-      const pool = pujas?.length ? pujas.map(normPuja) : PUJAS;
+      const pool = (pujas ?? []).map(normPuja);
       setPujaHits(pool.filter((p: any) => p.name.toLowerCase().includes(term.toLowerCase())).slice(0, 3));
     }, 220);
 
@@ -220,7 +218,7 @@ function SearchOverlay() {
                 {(S.recent.length ? S.recent : popular).slice(0, 4).map((p: any) => (
                   <button key={p.id} onClick={() => { S.setSearch(false); S.openProduct(p); }} style={{ textAlign: "left" }}>
                     <div style={{ borderRadius: 10, overflow: "hidden", background: "var(--surface-2)", aspectRatio: 1 }}>
-                      <Art kind={p.kind} tone={p.tone} mukhi={p.mukhi} id={`s${p.id}`} />
+                      <ProductArt src={p.image} alt={p.imageAlt || p.name} kind={p.kind} tone={p.tone} mukhi={p.mukhi} id={`s${p.id}`} />
                     </div>
                     <span style={{ fontSize: ".8rem", display: "block", marginTop: 8 }}>{p.name}</span>
                   </button>
@@ -236,7 +234,7 @@ function SearchOverlay() {
                 <button key={p.id} onClick={() => { S.setSearch(false); S.openProduct(p); }}
                   style={{ display: "flex", gap: 14, alignItems: "center", width: "100%", padding: "10px 0", textAlign: "left", borderBottom: "1px solid var(--line-2)" }}>
                   <span style={{ width: 46, height: 46, borderRadius: 9, overflow: "hidden", background: "var(--surface-2)", flexShrink: 0 }}>
-                    <Art kind={p.kind} tone={p.tone} mukhi={p.mukhi} id={`q${p.id}`} />
+                    <ProductArt src={p.image} alt={p.imageAlt || p.name} kind={p.kind} tone={p.tone} mukhi={p.mukhi} id={`q${p.id}`} />
                   </span>
                   <span style={{ flex: 1 }}>
                     <b style={{ fontFamily: "var(--display)", fontWeight: 500 }}>{p.name}</b>
@@ -303,7 +301,7 @@ function CartDrawer() {
             <div key={l.key} style={{ display: "flex", gap: 14, padding: "14px 0", borderBottom: "1px solid var(--line-2)" }}>
               <div style={{ width: 78, height: 78, borderRadius: 11, overflow: "hidden", background: "var(--surface-2)", flexShrink: 0 }}>
                 {l.type === "puja" ? <div style={{ display: "grid", placeItems: "center", height: "100%" }}>{I.cal}</div>
-                  : <Art kind={l.kind} tone={l.tone} mukhi={l.mukhi} id={`c${l.key}`} />}
+                  : <ProductArt src={l.image} alt={l.name} kind={l.kind} tone={l.tone} mukhi={l.mukhi} id={`c${l.key}`} />}
               </div>
               <div style={{ flex: 1 }}>
                 <b style={{ fontFamily: "var(--display)", fontWeight: 500, fontSize: ".98rem" }}>{l.name}</b>
@@ -360,7 +358,7 @@ function ProductCard({ p, delay = 0 }: { p: any; delay?: number }) {
         <button className={`wish ${wished ? "on" : ""}`} aria-label={wished ? "Remove from wishlist" : "Save to wishlist"}
           onClick={(e) => { e.stopPropagation(); S.toggleWish(p.id); }}>{I.heart(wished)}</button>
         <button onClick={() => S.openProduct(p)} style={{ width: "100%", height: "100%", display: "block" }} aria-label={`View ${p.name}`}>
-          <Art kind={p.kind} tone={p.tone} mukhi={p.mukhi} id={`p${p.id}`} />
+          <ProductArt src={p.image} alt={p.imageAlt || p.name} kind={p.kind} tone={p.tone} mukhi={p.mukhi} id={`p${p.id}`} />
         </button>
         <div className="quick">
           <button className="btn btn-ghost btn-sm btn-block" onClick={() => S.add(p)}>

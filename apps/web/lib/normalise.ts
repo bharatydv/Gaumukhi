@@ -39,6 +39,13 @@ export function normProduct(p: any) {
     gstRate: p.gstRate,
     variants: p.variants,
     certificates: p.certificates,
+    // Uploaded photography. `image` is what a card shows; an empty list is normal and
+    // means the SVG artwork stands in until someone uploads a photo.
+    images: (p.media ?? [])
+      .filter((m: any) => (m.kind ?? 'image') === 'image' && m.url)
+      .map((m: any) => ({ id: m.id, url: m.url, alt: m.alt ?? p.name, position: m.position ?? 0 })),
+    image: p.image ?? (p.media ?? []).find((m: any) => m.url)?.url ?? null,
+    imageAlt: p.imageAlt ?? p.name,
     media: p.media,
     seo: p.seo,
     serverReviews: p.reviews && Array.isArray(p.reviews) ? p.reviews : [],

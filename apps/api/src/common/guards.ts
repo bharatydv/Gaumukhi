@@ -32,3 +32,25 @@ export class RolesGuard implements CanActivate {
     return true;
   }
 }
+
+/**
+ * Populates req.user when a valid token is present and stays quiet when it is not.
+ * Routes that serve both guests and signed-in shoppers — the cart, above all — need
+ * the identity to bind the row to an account, but must never reject an anonymous
+ * visitor. Plain JwtAuthGuard throws on a missing token, so it cannot be used here.
+ */
+@Injectable()
+export class OptionalJwtAuthGuard extends AuthGuard('jwt') {
+  async canActivate(ctx: ExecutionContext) {
+    try {
+      await super.canActivate(ctx);
+    } catch {
+      // anonymous — carry on with req.user undefined
+    }
+    return true;
+  }
+
+  handleRequest(_err: any, user: any) {
+    return user || undefined;
+  }
+}
