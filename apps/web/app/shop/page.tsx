@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { ShopPage } from "../../components/storefront";
 import { api } from "../../lib/api";
+import { normProducts } from "../../lib/normalise";
+import { PRODUCTS } from "../../lib/seed-data";
 
 export const revalidate = 300;
 
@@ -18,6 +20,7 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
 
 export default async function Shop({ searchParams }: { searchParams: Promise<{ cat?: string }> }) {
   const { cat } = await searchParams;
-  await api.products({ category: cat, take: 24 });
-  return <ShopPage />;
+  // Server-rendered so the grid is real catalogue on first paint, not after hydration.
+  const res = await api.products({ take: 60 });
+  return <ShopPage products={res?.items?.length ? normProducts(res.items) : PRODUCTS} />;
 }

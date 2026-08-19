@@ -156,16 +156,29 @@ export class CatalogService {
       include: {
         category: { select: { id: true, name: true, slug: true } },
         variants: { include: { inventory: true } },
+        seo: { select: { title: true, metaDescription: true } },
       },
     });
 
+    // The editor round-trips these straight back into upsertProduct, so every
+    // writable column has to be here — anything omitted gets blanked on save.
     return rows.map((p) => ({
       ...shapeProduct(p),
       status: p.status,
       categoryId: p.categoryId,
       gstRate: Number(p.gstRate),
+      description: p.description,
+      benefits: Array.isArray(p.benefits) ? p.benefits : [],
+      howToWear: p.howToWear,
+      careNotes: p.careNotes,
       material: p.material,
       origin: p.origin,
+      weightGrams: p.weightGrams,
+      dimensions: p.dimensions,
+      hsnCode: p.hsnCode,
+      barcode: p.barcode,
+      metaTitle: p.seo?.title ?? null,
+      metaDescription: p.seo?.metaDescription ?? null,
       inventoryId: p.variants[0]?.inventory[0]?.id ?? null,
     }));
   }
@@ -206,6 +219,9 @@ export class CatalogService {
       origin: dto.origin,
       material: dto.material,
       weightGrams: dto.weightGrams,
+      dimensions: dto.dimensions,
+      hsnCode: dto.hsnCode,
+      barcode: dto.barcode,
       artKind: dto.artKind ?? 'bead',
       artTone: dto.artTone ?? 'rudraksha',
       badge: dto.badge,

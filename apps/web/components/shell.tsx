@@ -1,7 +1,9 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Art, I, LotusMark } from "./art";
-import { money, CATEGORY_TREE, PRODUCTS, PUJAS, PANDITS, TESTIMONIALS, BLOGS } from "../lib/seed-data";
+import { money, PRODUCTS, PUJAS } from "../lib/seed-data";
+import { api } from "../lib/api";
+import { normProducts, normPuja } from "../lib/normalise";
 
 
 /* ============================ STORE ============================ */
@@ -103,12 +105,12 @@ function Header() {
         {mega && (
           <div className="mega" onMouseLeave={() => setMega(false)}>
             <div className="wrap mega-grid">
-              {CATEGORY_TREE.map((g) => (
+              {(S.categories ?? []).map((g: any) => (
                 <div key={g.group}>
                   <h4>{g.group}</h4>
                   <ul>
-                    {g.items.map((c) => (
-                      <li key={c}><button onClick={() => { setMega(false); S.go("shop", { cat: c }); }}>{c}</button></li>
+                    {g.items.map((c: any) => (
+                      <li key={c.name}><button onClick={() => { setMega(false); S.go("shop", { cat: c.name }); }}>{c.name}</button></li>
                     ))}
                   </ul>
                 </div>
@@ -132,9 +134,9 @@ function Header() {
                   onClick={() => { f(); setMob(false); }}>{l}</button>
               ))}
               <h4 style={{ margin: "26px 0 10px" }} className="eyebrow">Shop by category</h4>
-              {CATEGORY_TREE.flatMap((g) => g.items).map((c) => (
-                <button key={c} style={{ display: "block", padding: "9px 0", color: "var(--ink-2)", width: "100%", textAlign: "left" }}
-                  onClick={() => { S.go("shop", { cat: c }); setMob(false); }}>{c}</button>
+              {(S.categories ?? []).flatMap((g: any) => g.items).map((c: any) => (
+                <button key={c.name} style={{ display: "block", padding: "9px 0", color: "var(--ink-2)", width: "100%", textAlign: "left" }}
+                  onClick={() => { S.go("shop", { cat: c.name }); setMob(false); }}>{c.name}</button>
               ))}
             </div>
             <div className="drawer-foot">
@@ -160,10 +162,37 @@ function SearchOverlay() {
     window.addEventListener("keydown", k);
     return () => window.removeEventListener("keydown", k);
   }, [S]);
-  const hits = q.length > 0
-    ? PRODUCTS.filter((p) => (p.name + p.category).toLowerCase().includes(q.toLowerCase())).slice(0, 6)
-    : [];
-  const pujaHits = q.length > 0 ? PUJAS.filter((p) => p.name.toLowerCase().includes(q.toLowerCase())).slice(0, 3) : [];
+  const [hits, setHits] = useState<any[]>([]);
+  const [pujaHits, setPujaHits] = useState<any[]>([]);
+  const [popular, setPopular] = useState<any[]>([]);
+
+  // Suggestions for the empty state, so "recently viewed" is never invented.
+  useEffect(() => {
+    api.products({ sort: "best", take: 4 }).then((r) => {
+      setPopular(r?.items?.length ? normProducts(r.items) : PRODUCTS.slice(0, 4));
+    });
+  }, []);
+
+  // Search runs against the database, debounced so typing does not spam the API.
+  useEffect(() => {
+    const term = q.trim();
+    if (!term) { setHits([]); setPujaHits([]); return; }
+
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const [products, pujas] = await Promise.all([api.products({ q: term, take: 6 }), api.pujas()]);
+      if (cancelled) return;
+
+      setHits(products?.items?.length
+        ? normProducts(products.items)
+        : PRODUCTS.filter((p) => (p.name + p.category).toLowerCase().includes(term.toLowerCase())).slice(0, 6));
+
+      const pool = pujas?.length ? pujas.map(normPuja) : PUJAS;
+      setPujaHits(pool.filter((p: any) => p.name.toLowerCase().includes(term.toLowerCase())).slice(0, 3));
+    }, 220);
+
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [q]);
   return (
     <>
       <div className="scrim" onClick={() => S.setSearch(false)} />
@@ -188,7 +217,7 @@ function SearchOverlay() {
               </div>
               <p className="eyebrow" style={{ margin: "26px 0 12px" }}>Recently viewed</p>
               <div className="grid g4">
-                {(S.recent.length ? S.recent : PRODUCTS.slice(0, 4)).slice(0, 4).map((p) => (
+                {(S.recent.length ? S.recent : popular).slice(0, 4).map((p: any) => (
                   <button key={p.id} onClick={() => { S.setSearch(false); S.openProduct(p); }} style={{ textAlign: "left" }}>
                     <div style={{ borderRadius: 10, overflow: "hidden", background: "var(--surface-2)", aspectRatio: 1 }}>
                       <Art kind={p.kind} tone={p.tone} mukhi={p.mukhi} id={`s${p.id}`} />

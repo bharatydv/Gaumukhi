@@ -15,12 +15,12 @@ divyaloka/
 
 ## Run it
 
-Requirements: Node 20+, Docker.
+Requirements: Node 20+, and Postgres 14+ either via Docker or installed on the host.
 
 ```bash
 make install     # deps for both apps + prisma generate
 make up          # postgres + redis
-make migrate     # create the schema
+make deploy      # apply the committed migrations
 make seed        # catalogue, pujas, pandits, demo accounts
 make dev         # api on :4000, web on :3000
 ```
@@ -30,6 +30,46 @@ Or the whole stack in containers:
 ```bash
 docker compose -f infra/docker-compose.yml up --build
 ```
+
+### Without Docker
+
+If Postgres is already installed on the machine, skip `make up`:
+
+```bash
+make install
+make db-create   # creates the divyaloka role + database
+make deploy      # apply the committed migrations
+make seed
+make dev
+```
+
+`make db-create` connects as the `postgres` superuser and is safe to re-run —
+it reports "already exists" and carries on. If your server asks for a password,
+set `PGPASSWORD` first, or create the role and database by hand:
+
+```sql
+CREATE ROLE divyaloka WITH LOGIN PASSWORD 'divyaloka' CREATEDB;
+CREATE DATABASE divyaloka OWNER divyaloka;
+```
+
+Redis is optional — leave `REDIS_URL` commented out and the API falls back to an
+in-process cache. Set it only when a Redis server is actually running, because a
+`REDIS_URL` pointing at a dead port fails every cached read.
+
+### Moving to another machine
+
+The schema travels, the data does not. `apps/api/prisma/migrations/` is committed,
+so `make deploy` rebuilds all 42 tables identically anywhere. `make seed` then loads
+the demo catalogue — but it **wipes every table first**, so never run it on a database
+holding real orders. To carry actual data across, use `pg_dump` instead:
+
+```bash
+pg_dump -U divyaloka -h 127.0.0.1 divyaloka > divyaloka.sql   # source machine
+psql   -U divyaloka -h 127.0.0.1 -d divyaloka -f divyaloka.sql # target machine
+```
+
+`.env` files are gitignored and never travel. On each new machine copy
+`apps/api/.env.example` → `apps/api/.env` and `apps/web/.env.example` → `apps/web/.env.local`.
 
 | URL | What |
 |---|---|
@@ -143,11 +183,15 @@ Run in this environment before delivery:
 | `apps/api` — `tsc --noEmit` | passes across all modules |
 | `apps/web` — `tsc --noEmit` | passes |
 | `apps/web` — `next build` | passes end to end, 17 routes |
-| `prisma validate` / `generate` | **not run** — engine binaries are on `binaries.prisma.sh`, unreachable from the build sandbox |
+| `prisma migrate` / `generate` | run against Postgres 18 — 42 tables created from `20260819103948_init` |
+| `npm run seed` | 21 categories, 24 products, 12 pujas, 6 pandits, 10 users |
+| API boot | `Database connected`, all routes mapped, `/api/health` reports `db: up` |
+| Product create + edit round-trip | verified in Postgres — all 22 fields persist, edits preserve untouched columns |
+| Coupon edit | verified — value, caps, limits, expiry and active state all persist |
 
-One thing to know before your first run: **`npx prisma generate` has never been executed against this schema.** The engine binaries live on a host the build sandbox cannot reach, so the CLI never checked it. Treat a first-run schema error as plausible rather than surprising.
-
-Nothing here has touched a live Postgres, because this environment has no database. Everything downstream of "the code compiles" — migrations, seed, the booking lock, the webhook path, and the API calls behind every button above — is written but unrun. Budget an afternoon for the first integration pass.
+The schema, the migration and the seed have now been run against a live Postgres.
+Still unexercised end to end: the booking slot-hold lock, the payment webhook path,
+and refunds — those need a real gateway round trip rather than the sandbox settle.
 
 ---
 

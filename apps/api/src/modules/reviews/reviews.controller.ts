@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Role } from '@prisma/client';
 import { ReviewsService } from './reviews.service';
@@ -9,6 +9,9 @@ import { CurrentUser, AuthUser, Roles, Public } from '../../common/decorators';
 @Controller('reviews')
 export class ReviewsController {
   constructor(private reviews: ReviewsService) {}
+
+  @Public() @Get('testimonials')
+  testimonials(@Query('take') take?: string) { return this.reviews.testimonials(Number(take) || 6); }
 
   @Public() @Get('product/:productId')
   forProduct(@Param('productId') id: string) { return this.reviews.listForProduct(id); }

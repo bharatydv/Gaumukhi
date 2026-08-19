@@ -1,9 +1,9 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { Art, I, LotusMark } from "./art";
-import { money, CATEGORY_TREE, PRODUCTS, PUJAS, PANDITS, TESTIMONIALS, BLOGS } from "../lib/seed-data";
+import { money, PUJAS, PANDITS, BLOGS } from "../lib/seed-data";
 import { api } from "../lib/api";
-import { normPuja, normPandit } from "../lib/normalise";
+import { normPuja, normPandit, normPost } from "../lib/normalise";
 import { Shop, useShop, Reveal, Stars, ProductCard, SkeletonCard } from "./shell";
 
 
@@ -16,8 +16,10 @@ const dateKey = (d: Date) => d.toISOString().slice(0, 10);
 function BookPuja() {
   const S = useShop();
   const [step, setStep] = useState(0);
-  const [pujas, setPujas] = useState<any[]>(PUJAS);
-  const [pandits, setPandits] = useState<any[]>(PANDITS);
+  // Both start empty and are filled from the database; the bundled lists are
+  // only substituted if the API fails to answer.
+  const [pujas, setPujas] = useState<any[]>([]);
+  const [pandits, setPandits] = useState<any[]>([]);
   const [loadingPandits, setLoadingPandits] = useState(false);
 
   const [puja, setPuja] = useState<any>(null);
@@ -52,9 +54,12 @@ function BookPuja() {
           const hit = mapped.find((p: any) => p.slug === wanted || p.id === wanted);
           if (hit) { setPuja(hit); setStep(1); }
         }
-      } else if (S.params.puja) {
-        const hit = PUJAS.find((p: any) => p.id === S.params.puja);
-        if (hit) { setPuja(hit); setStep(1); }
+      } else {
+        setPujas(PUJAS);
+        if (S.params.puja) {
+          const hit = PUJAS.find((p: any) => p.id === S.params.puja);
+          if (hit) { setPuja(hit); setStep(1); }
+        }
       }
     });
     if (S.user) api.addresses().then((rows) => {
@@ -1236,23 +1241,34 @@ function Account() {
 
 /* ============================ CONTENT PAGES ============================ */
 
-function Blog() {
+function Blog({ posts: initial }: { posts?: any[] } = {}) {
   const S = useShop();
+  // Rendered server-side from the prop so the articles are in the initial HTML;
+  // the client fetch only has to cover the case where the page was not prefilled.
+  const [posts, setPosts] = useState<any[]>(initial ?? []);
+
+  useEffect(() => {
+    if (initial?.length) return;
+    api.posts(24).then((rows) => {
+      setPosts(rows?.length ? rows.map(normPost) : BLOGS.map(normPost));
+    });
+  }, [initial]);
+
   return (
     <main className="wrap" style={{ padding: "40px 24px 80px" }}>
       <span className="eyebrow">Journal</span>
       <h1 style={{ margin: "12px 0 10px" }}>Notes on beads, ritual and practice</h1>
       <p className="muted" style={{ maxWidth: "60ch", marginBottom: 36 }}>Written by our sourcing team in Varanasi and two senior pandits. No affiliate links, no sponsored posts.</p>
       <div className="grid g3">
-        {[...BLOGS, ...BLOGS].map((b, i) => (
-          <Reveal key={i} delay={(i % 3) * 60} className="card" style={{ cursor: "pointer" }}>
+        {posts.map((b: any, i: number) => (
+          <Reveal key={b.slug ?? i} delay={(i % 3) * 60} className="card" style={{ cursor: "pointer" }}>
             <div className="pc-media" style={{ aspectRatio: "3/2" }}>
               <div style={{ position: "absolute", inset: "14%" }}><Art kind={["bead", "book", "yantra", "mala"][i % 4]} tone={i % 2 ? "gold" : "rudraksha"} mukhi={(i % 5) + 1} id={`bl${i}`} /></div>
             </div>
             <div className="pc-body">
-              <span className="pc-cat">{b.c} · {b.d} read</span>
-              <h3 className="pc-name">{b.t}</h3>
-              <p className="muted" style={{ fontSize: ".85rem" }}>{b.x}</p>
+              <span className="pc-cat">{b.category} · {b.readMinutes} min read{b.author ? ` · ${b.author}` : ""}</span>
+              <h3 className="pc-name">{b.title}</h3>
+              <p className="muted" style={{ fontSize: ".85rem" }}>{b.excerpt}</p>
               <button className="link-more" style={{ marginTop: 14, display: "inline-block" }} onClick={() => S.toast("Opening article")}>Read</button>
             </div>
           </Reveal>

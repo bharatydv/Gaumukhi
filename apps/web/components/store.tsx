@@ -5,8 +5,8 @@ import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Shop, Header, Footer, CartDrawer, SearchOverlay, FloatingHelp } from "./shell";
 import { I } from "./art";
 import { api, payFor } from "../lib/api";
-import { PRODUCTS } from "../lib/seed-data";
-import { normOrder, normBooking, normProducts, toRupees } from "../lib/normalise";
+import { PRODUCTS, CATEGORY_TREE } from "../lib/seed-data";
+import { normOrder, normBooking, normProducts, normCategories, toRupees } from "../lib/normalise";
 
 /** route key → URL, so child components keep calling S.go("shop", { cat }) unchanged. */
 const ROUTES: Record<string, string> = {
@@ -45,6 +45,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [giftWrap, setGiftWrapState] = useState(false);
   const [orders, setOrders] = useState<any[]>([]);
   const [bookings, setBookings] = useState<any[]>([]);
+  // Nav categories come from the database so a new category appears in the menu
+  // as soon as it is created in the admin panel.
+  const [categories, setCategories] = useState<any[]>([]);
 
   const toast = useCallback((t: string, bad = false) => {
     const id = Math.random();
@@ -99,6 +102,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         }
         absorbCart(serverCart);
       }
+
+      const cats = await api.categories();
+      setCategories(normCategories(cats?.length ? cats : CATEGORY_TREE));
+
       setReady(true);
     })();
   }, [absorbCart]);
@@ -344,6 +351,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     // ── misc ───────────────────────────────────────────────────
     addBooking: (b: any) => setBookings((x) => [b, ...x]),
 
+    categories,
     seedProducts: PRODUCTS,
     normProducts,
   };
