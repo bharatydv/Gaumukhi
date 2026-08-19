@@ -1,10 +1,10 @@
 import { Home } from "../components/storefront";
 import { api } from "../lib/api";
 import { normProducts, normTestimonial, normPost } from "../lib/normalise";
-import { PRODUCTS, TESTIMONIALS, BLOGS } from "../lib/seed-data";
 
-// Statically rendered, revalidated every minute so merchandising changes land fast.
-export const revalidate = 60;
+// Prices, stock and merchandising are read per request: an admin edit is live on
+// the next page load rather than whenever a cache window happens to lapse.
+export const revalidate = 0;
 
 export default async function HomePage() {
   // Fetched server-side and handed down, so the catalogue, testimonials and
@@ -18,9 +18,9 @@ export default async function HomePage() {
 
   return (
     <Home
-      products={catalogue?.items?.length ? normProducts(catalogue.items) : PRODUCTS}
-      testimonials={(quotes?.length ? quotes : TESTIMONIALS).map(normTestimonial)}
-      posts={(posts?.length ? posts : BLOGS).map(normPost)}
+      products={normProducts(catalogue?.items ?? [])}
+      testimonials={(quotes ?? []).map(normTestimonial)}
+      posts={(posts ?? []).map(normPost)}
     />
   );
 }

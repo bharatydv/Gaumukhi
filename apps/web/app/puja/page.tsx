@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import { BookPuja } from "../../components/booking";
 import { api } from "../../lib/api";
+import { normPuja, normPandit } from "../../lib/normalise";
 
-export const revalidate = 300;
+export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "Book a pandit — online, at home, or hybrid",
@@ -52,12 +53,18 @@ const serviceSchema = {
 };
 
 export default async function PujaPage() {
-  await Promise.all([api.pujas(), api.pandits()]);
+  // Server-rendered and handed down, so the puja list and pandit roster are the
+  // published ones in the initial HTML rather than a second fetch after hydration.
+  const [pujas, pandits] = await Promise.all([api.pujas(), api.pandits()]);
+
   return (
     <>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }} />
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(serviceSchema) }} />
-      <BookPuja />
+      <BookPuja
+        initialPujas={(pujas ?? []).map(normPuja)}
+        initialPandits={(pandits ?? []).map(normPandit)}
+      />
     </>
   );
 }

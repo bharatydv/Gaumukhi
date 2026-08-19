@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma.service';
 import { CartService } from '../cart/cart.service';
 import { CouponsService } from '../coupons/coupons.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CatalogService } from '../catalog/catalog.service';
 import { orderNumber, invoiceNumber } from '../../common/ids';
 
 @Injectable()
@@ -13,7 +14,21 @@ export class OrdersService {
     private cart: CartService,
     private coupons: CouponsService,
     private notify: NotificationsService,
+    private catalog: CatalogService,
   ) {}
+
+  /**
+   * Sellable stock is `onHand - reserved`, so reserving, selling and releasing all
+   * change what the shop should be advertising. The cached catalogue has to be dropped
+   * with them, or the storefront keeps offering a bead that is already in someone's
+   * order — the shape of an oversell.
+   */
+  private async refreshCatalogue(productIds: string[]) {
+    const ids = [...new Set(productIds)].filter(Boolean);
+    if (!ids.length) return;
+    const rows = await this.prisma.product.findMany({ where: { id: { in: ids } }, select: { slug: true } });
+    for (const r of rows) await this.catalog.invalidate(r.slug);
+  }
 
   /**
    * Turns a cart into an order. Stock is *reserved* here, not decremented —
@@ -35,7 +50,7 @@ export class OrdersService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     const points = Math.min(Math.max(0, pointsToUse), user.points, cart.totals.total);
 
-    return this.prisma.$transaction(async (tx) => {
+    const created = await this.prisma.$transaction(async (tx) => {
       const order = await tx.order.create({
         data: {
           number: orderNumber(),
@@ -85,6 +100,9 @@ export class OrdersService {
 
       return order;
     });
+
+    await this.refreshCatalogue(created.items.map((i) => i.productId));
+    return created;
   }
 
   /** Called by the payment webhook once funds are confirmed. Idempotent. */
@@ -141,6 +159,8 @@ export class OrdersService {
       });
     });
 
+    await this.refreshCatalogue(order.items.map((i) => i.productId));
+
     await this.notify.notifyUser(order.userId, 'order.confirmed', { number: order.number, total: order.total },
       ['inapp', 'email', 'sms', 'whatsapp']);
 
@@ -162,6 +182,8 @@ export class OrdersService {
       }
       await tx.order.update({ where: { id: order.id }, data: { status: OrderStatus.CANCELLED } });
     });
+
+    await this.refreshCatalogue(order.items.map((i) => i.productId));
   }
 
   async listMine(userId: string) {

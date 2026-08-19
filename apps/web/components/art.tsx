@@ -254,4 +254,32 @@ const LotusMark = ({ size = 38 }) => (
 );
 
 
-export { Bead, Art, I, LotusMark, TONES };
+
+/**
+ * What a product actually looks like.
+ *
+ * A real photograph when one has been uploaded, and the drawn artwork when none has —
+ * so a catalogue that is half photographed still reads as finished rather than broken.
+ * `src` is whatever the API returned; if the file itself fails to load we fall back to
+ * the artwork too, because a shopper should never meet a torn-image icon.
+ */
+function ProductArt({ src, alt, kind = "bead", tone = "rudraksha", mukhi = 5, id = "x", className = "" }) {
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => { setFailed(false); }, [src]);
+
+  if (!src || failed) return <Art kind={kind} tone={tone} mukhi={mukhi} id={id} className={className} />;
+
+  return (
+    <img
+      src={src}
+      alt={alt || ""}
+      className={className}
+      loading="lazy"
+      decoding="async"
+      onError={() => setFailed(true)}
+      style={{ width: "100%", height: "100%", display: "block", objectFit: "cover" }}
+    />
+  );
+}
+
+export { Bead, Art, ProductArt, I, LotusMark, TONES };

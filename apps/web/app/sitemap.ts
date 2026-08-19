@@ -1,6 +1,5 @@
 import type { MetadataRoute } from "next";
 import { api } from "../lib/api";
-import { PRODUCTS, CATEGORY_TREE } from "../lib/seed-data";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL || "https://divyaloka.com";
 
@@ -16,14 +15,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE}/contact`, changeFrequency: "monthly", priority: 0.5 },
   ];
 
-  const products = (data?.products ?? PRODUCTS).map((p: any) => ({
+  const products = (data?.products ?? []).map((p: any) => ({
     url: `${SITE}/product/${p.slug}`,
     lastModified: p.updatedAt ? new Date(p.updatedAt) : undefined,
     changeFrequency: "weekly" as const,
     priority: 0.8,
   }));
 
-  const categories = (data?.categories ?? CATEGORY_TREE.flatMap((g: any) => g.items.map((name: string) => ({ slug: name })))).map(
+  const categories = (data?.categories ?? []).map(
     (c: any) => ({ url: `${SITE}/shop?cat=${encodeURIComponent(c.slug)}`, changeFrequency: "weekly" as const, priority: 0.7 }),
   );
 

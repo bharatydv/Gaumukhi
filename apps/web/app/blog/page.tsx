@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Blog } from "../../components/booking";
 import { api } from "../../lib/api";
 import { normPost } from "../../lib/normalise";
-import { BLOGS } from "../../lib/seed-data";
 
 export const revalidate = 600;
 
@@ -16,6 +15,6 @@ export const metadata: Metadata = {
 export default async function BlogPage() {
   // Fetched here so the articles are server-rendered rather than appearing after hydration.
   const rows = await api.posts(24);
-  const posts = (rows?.length ? rows : BLOGS).map(normPost);
+  const posts = (rows ?? []).map(normPost);
   return <Blog posts={posts} />;
 }

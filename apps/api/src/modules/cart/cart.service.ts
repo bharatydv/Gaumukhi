@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma.service';
 import { CouponsService } from '../coupons/coupons.service';
+import { mediaUrl } from '../../common/storage.service';
 
 const FREE_SHIPPING = Number(process.env.FREE_SHIPPING_THRESHOLD || 299900);
 const FLAT_SHIPPING = Number(process.env.SHIPPING_FLAT_FEE || 9900);
@@ -59,7 +60,12 @@ export class CartService {
         coupon: true,
         items: {
           include: {
-            product: { include: { category: { select: { name: true } } } },
+            product: {
+              include: {
+                category: { select: { name: true } },
+                media: { orderBy: { position: 'asc' }, take: 1 },
+              },
+            },
             variant: { include: { inventory: true } },
           },
           orderBy: { addedAt: 'asc' },
@@ -79,6 +85,7 @@ export class CartService {
         category: i.product.category?.name,
         artKind: i.product.artKind,
         artTone: i.product.artTone,
+        image: i.product.media?.length ? mediaUrl(i.product.media[0].key) : null,
         mukhi: i.product.mukhi,
         unitPrice,
         mrp: i.product.mrp,

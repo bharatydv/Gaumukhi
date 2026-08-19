@@ -5,14 +5,28 @@ import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { RequestOtpDto, VerifyOtpDto, EmailLoginDto, EmailRegisterDto, GoogleLoginDto } from './dto';
 import { JwtAuthGuard } from '../../common/guards';
-import { CurrentUser, AuthUser } from '../../common/decorators';
+import { CurrentUser, AuthUser, SessionId } from '../../common/decorators';
+import { CartService } from '../cart/cart.service';
 
 const isProd = process.env.NODE_ENV === 'production';
 
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private auth: AuthService) {}
+  constructor(private auth: AuthService, private cart: CartService) {}
+
+  /**
+   * A shopper fills a bag as a guest and then signs in to pay. Without this the
+   * anonymous cart is orphaned and the bag appears to empty itself at checkout.
+   */
+  private async adoptGuestCart(userId: string, sessionId?: string) {
+    if (!sessionId) return;
+    try {
+      await this.cart.mergeOnLogin(userId, sessionId);
+    } catch {
+      // A failed merge must never block a sign-in.
+    }
+  }
 
   private setCookies(res: Response, t: { accessToken: string; refreshToken: string; accessTtl: number; refreshTtl: number }) {
     const base = { httpOnly: true, secure: isProd, sameSite: 'lax' as const, path: '/' };
@@ -29,32 +43,36 @@ export class AuthController {
 
   @Post('otp/verify')
   @Throttle({ default: { limit: 10, ttl: 600_000 } })
-  async verifyOtp(@Body() dto: VerifyOtpDto, @Res({ passthrough: true }) res: Response) {
+  async verifyOtp(@Body() dto: VerifyOtpDto, @Res({ passthrough: true }) res: Response, @SessionId() sid: string) {
     const tokens = await this.auth.verifyOtp(dto.phone, dto.code, dto.referralCode);
     this.setCookies(res, tokens);
+    await this.adoptGuestCart(tokens.userId, sid);
     return { ok: true, accessToken: tokens.accessToken };
   }
 
   @Post('register')
-  async register(@Body() dto: EmailRegisterDto, @Res({ passthrough: true }) res: Response) {
+  async register(@Body() dto: EmailRegisterDto, @Res({ passthrough: true }) res: Response, @SessionId() sid: string) {
     const tokens = await this.auth.register(dto.email, dto.password, dto.name, dto.referralCode);
     this.setCookies(res, tokens);
+    await this.adoptGuestCart(tokens.userId, sid);
     return { ok: true, accessToken: tokens.accessToken };
   }
 
   @Post('login')
   @Throttle({ default: { limit: 10, ttl: 600_000 } })
-  async login(@Body() dto: EmailLoginDto, @Res({ passthrough: true }) res: Response) {
+  async login(@Body() dto: EmailLoginDto, @Res({ passthrough: true }) res: Response, @SessionId() sid: string) {
     const tokens = await this.auth.login(dto.email, dto.password);
     this.setCookies(res, tokens);
+    await this.adoptGuestCart(tokens.userId, sid);
     return { ok: true, accessToken: tokens.accessToken };
   }
 
   @Post('google')
-  async google(@Body() dto: GoogleLoginDto, @Res({ passthrough: true }) res: Response) {
+  async google(@Body() dto: GoogleLoginDto, @Res({ passthrough: true }) res: Response, @SessionId() sid: string) {
     const profile = await verifyGoogleIdToken(dto.idToken);
     const tokens = await this.auth.googleLogin(profile);
     this.setCookies(res, tokens);
+    await this.adoptGuestCart(tokens.userId, sid);
     return { ok: true, accessToken: tokens.accessToken };
   }
 

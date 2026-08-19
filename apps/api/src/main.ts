@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import helmet from 'helmet';
@@ -7,10 +8,11 @@ import compression from 'compression';
 import cookieParser from 'cookie-parser';
 import { json } from 'express';
 import { AppModule } from './app.module';
+import { StorageService } from './common/storage.service';
 import { HttpExceptionFilter } from './common/http-exception.filter';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { bufferLogs: true });
 
   // Razorpay/Stripe signatures are computed over the raw body, so keep a copy.
   app.use(
@@ -30,6 +32,19 @@ async function bootstrap() {
   app.enableCors({
     origin: (process.env.WEB_URL || 'http://localhost:3000').split(','),
     credentials: true,
+    // x-session-id carries the guest cart identity; without it listed the browser
+    // strips the header on the preflight and every anonymous cart call fails.
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-session-id'],
+  });
+
+  // Product photography uploaded from the admin console. Served outside the /api
+  // prefix and cached hard, because every stored key is content-addressed and a file
+  // is never rewritten in place — a changed image is a new key.
+  app.useStaticAssets(StorageService.localRoot(), {
+    prefix: '/uploads/',
+    maxAge: '365d',
+    immutable: true,
+    fallthrough: false,
   });
 
   app.setGlobalPrefix('api');

@@ -2,10 +2,15 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { BookingStatus, OrderStatus, PanditStatus, PaymentStatus } from '@prisma/client';
 import { PrismaService } from '../../common/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { CatalogService } from '../catalog/catalog.service';
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService, private notify: NotificationsService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notify: NotificationsService,
+    private catalog: CatalogService,
+  ) {}
 
   /** Everything the dashboard needs, in one round trip. */
   async dashboard() {
@@ -127,9 +132,18 @@ export class AdminService {
     });
   }
 
-  adjustStock(inventoryId: string, onHand: number) {
+  async adjustStock(inventoryId: string, onHand: number) {
     if (onHand < 0) throw new BadRequestException('Stock cannot be negative');
-    return this.prisma.inventory.update({ where: { id: inventoryId }, data: { onHand } });
+
+    const row = await this.prisma.inventory.update({
+      where: { id: inventoryId },
+      data: { onHand },
+      include: { variant: { select: { product: { select: { slug: true } } } } },
+    });
+
+    // Without this the storefront keeps serving the pre-edit count from cache.
+    await this.catalog.invalidate(row.variant?.product?.slug);
+    return row;
   }
 
   bookings(status?: BookingStatus) {

@@ -1,7 +1,7 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { Art, I, LotusMark } from "./art";
-import { money, PRODUCTS, TESTIMONIALS, BLOGS } from "../lib/seed-data";
+import { Art, ProductArt, I, LotusMark } from "./art";
+import { money } from "../lib/format";
 import { Shop, useShop, Reveal, Stars, ProductCard, SkeletonCard } from "./shell";
 import { api } from "../lib/api";
 import { normProducts, normTestimonial, normPost } from "../lib/normalise";
@@ -28,9 +28,9 @@ function Home({ products, testimonials, posts }: { products?: any[]; testimonial
       api.posts(4),
     ]).then(([p, t, b]) => {
       if (cancelled) return;
-      setLive(p?.items?.length ? normProducts(p.items) : PRODUCTS);
-      setQuotes(t?.length ? t.map(normTestimonial) : TESTIMONIALS.map(normTestimonial));
-      setJournal(b?.length ? b.map(normPost) : BLOGS.map(normPost));
+      setLive(normProducts(p?.items ?? []));
+      setQuotes((t ?? []).map(normTestimonial));
+      setJournal((b ?? []).map(normPost));
       setLoading(false);
     });
 
@@ -295,11 +295,12 @@ function ShopPage({ products }: { products?: any[] } = {}) {
 
   useEffect(() => { setCat(q.cat || "All"); }, [q.cat]);
 
-  // Database is the catalogue. The bundled set only stands in if the API is unreachable.
+  // The database is the catalogue, full stop. If it cannot answer, the grid stays
+  // empty and says so rather than showing pieces nobody can actually buy.
   useEffect(() => {
     if (products?.length) return;
     api.products({ take: 60 }).then((r) => {
-      setCatalogue(r?.items?.length ? normProducts(r.items) : PRODUCTS);
+      setCatalogue(normProducts(r?.items ?? []));
     });
   }, [products]);
   useEffect(() => { setLoading(true); const t = setTimeout(() => setLoading(false), 420); return () => clearTimeout(t); }, [cat, sort, max, mukhi.length, onlyStock]);
@@ -375,9 +376,21 @@ function ShopPage({ products }: { products?: any[] } = {}) {
           </div>
           {!loading && list.length === 0 && (
             <div style={{ textAlign: "center", padding: "70px 0" }}>
-              <h3>No pieces match these filters</h3>
-              <p className="muted" style={{ margin: "8px 0 20px" }}>Widen the price range or clear the mukhi selection.</p>
-              <button className="btn btn-ghost" onClick={() => { setMukhi([]); setMax(90000); setCat("All"); setOnlyStock(false); }}>Clear all filters</button>
+              {catalogue.length === 0 ? (
+                <>
+                  <h3>The catalogue could not be loaded</h3>
+                  <p className="muted" style={{ margin: "8px 0 20px" }}>
+                    Nothing is being shown rather than something out of date. Refresh in a moment.
+                  </p>
+                  <button className="btn btn-ghost" onClick={() => window.location.reload()}>Try again</button>
+                </>
+              ) : (
+                <>
+                  <h3>No pieces match these filters</h3>
+                  <p className="muted" style={{ margin: "8px 0 20px" }}>Widen the price range or clear the mukhi selection.</p>
+                  <button className="btn btn-ghost" onClick={() => { setMukhi([]); setMax(90000); setCat("All"); setOnlyStock(false); }}>Clear all filters</button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -412,7 +425,7 @@ function ProductPage({ product }: { product?: any }) {
   useEffect(() => {
     let cancelled = false;
     api.products({ take: 24 }).then((r) => {
-      if (!cancelled) setAlsoLive(r?.items?.length ? normProducts(r.items) : PRODUCTS);
+      if (!cancelled) setAlsoLive(normProducts(r?.items ?? []));
     });
     return () => { cancelled = true; };
   }, []);
@@ -420,7 +433,12 @@ function ProductPage({ product }: { product?: any }) {
   if (!p) return null;
 
   const off = Math.round(((p.mrp - p.price) / p.mrp) * 100);
-  const views = ["Front", "Reverse", "360° view", "On-body video"];
+  // The gallery is the uploaded photography when there is any; with none, it falls
+  // back to the two drawn views so the layout never collapses on an unphotographed piece.
+  const shots: any[] = p.images?.length ? p.images : [];
+  const views = shots.length
+    ? shots.map((m: any, i: number) => m.alt || `View ${i + 1}`)
+    : ["Front", "Reverse", "360° view", "On-body video"];
   const pool = alsoLive.filter((x: any) => x.id !== p.id);
   const related = p.related?.length
     ? p.related
@@ -458,14 +476,15 @@ function ProductPage({ product }: { product?: any }) {
               transform: zoom ? `scale(1.9)` : "none",
               transformOrigin: zoom ? `${zoom.x}% ${zoom.y}%` : "center",
             }}>
-              <Art kind={p.kind} tone={p.tone} mukhi={p.mukhi} id={`d${p.id}-${view}`} />
+              <ProductArt src={shots[view]?.url} alt={shots[view]?.alt || p.name}
+                kind={p.kind} tone={p.tone} mukhi={p.mukhi} id={`d${p.id}-${view}`} />
             </div>
-            {view === 2 && (
+            {!shots.length && view === 2 && (
               <div style={{ position: "absolute", left: 16, bottom: 16, display: "flex", gap: 8, alignItems: "center", background: "var(--surface)", padding: "8px 14px", borderRadius: 999, fontSize: ".74rem" }}>
                 {I.cube} Drag to rotate
               </div>
             )}
-            {view === 3 && (
+            {!shots.length && view === 3 && (
               <button style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }} onClick={() => S.toast("Playing the on-body video")}>
                 <span style={{ width: 64, height: 64, borderRadius: "50%", background: "rgba(255,255,255,.9)", display: "grid", placeItems: "center", color: "var(--brown)" }}>{I.play}</span>
               </button>
@@ -476,8 +495,10 @@ function ProductPage({ product }: { product?: any }) {
           <div className="thumbs">
             {views.map((v, i) => (
               <button key={v} className={`thumb ${view === i ? "on" : ""}`} onClick={() => setView(i)} title={v} aria-label={v}>
-                {i < 2 ? <Art kind={p.kind} tone={p.tone} mukhi={p.mukhi} id={`t${p.id}-${i}`} />
-                  : <span style={{ display: "grid", placeItems: "center", height: "100%", fontSize: ".62rem", letterSpacing: ".1em", color: "var(--ink-3)", textAlign: "center", padding: 6 }}>{i === 2 ? "360°" : "VIDEO"}</span>}
+                {shots.length
+                  ? <ProductArt src={shots[i]?.url} alt={shots[i]?.alt || p.name} kind={p.kind} tone={p.tone} mukhi={p.mukhi} id={`t${p.id}-${i}`} />
+                  : i < 2 ? <Art kind={p.kind} tone={p.tone} mukhi={p.mukhi} id={`t${p.id}-${i}`} />
+                    : <span style={{ display: "grid", placeItems: "center", height: "100%", fontSize: ".62rem", letterSpacing: ".1em", color: "var(--ink-3)", textAlign: "center", padding: 6 }}>{i === 2 ? "360°" : "VIDEO"}</span>}
               </button>
             ))}
           </div>
@@ -554,7 +575,7 @@ function ProductPage({ product }: { product?: any }) {
               {i > 0 && <span style={{ fontSize: "1.3rem", color: "var(--ink-3)" }}>+</span>}
               <div style={{ width: 130 }}>
                 <div style={{ borderRadius: 12, overflow: "hidden", background: "var(--surface-2)", aspectRatio: 1 }}>
-                  <Art kind={b.kind} tone={b.tone} mukhi={b.mukhi} id={`f${b.id}`} />
+                  <ProductArt src={b.image} alt={b.name} kind={b.kind} tone={b.tone} mukhi={b.mukhi} id={`f${b.id}`} />
                 </div>
                 <label style={{ display: "flex", gap: 7, alignItems: "flex-start", marginTop: 9, fontSize: ".78rem" }}>
                   <input type="checkbox" checked={i === 0 ? true : fbt[i - 1]} disabled={i === 0}
@@ -739,7 +760,7 @@ function ProductPage({ product }: { product?: any }) {
             {S.recent.filter((r) => r.id !== p.id).slice(0, 5).map((r) => (
               <button key={r.id} onClick={() => S.openProduct(r)} style={{ textAlign: "left" }}>
                 <div style={{ borderRadius: 12, overflow: "hidden", aspectRatio: 1, background: "var(--surface-2)" }}>
-                  <Art kind={r.kind} tone={r.tone} mukhi={r.mukhi} id={`rv${r.id}`} />
+                  <ProductArt src={r.image} alt={r.name} kind={r.kind} tone={r.tone} mukhi={r.mukhi} id={`rv${r.id}`} />
                 </div>
                 <span style={{ fontSize: ".8rem", display: "block", marginTop: 8 }}>{r.name}</span>
                 <b style={{ fontSize: ".84rem" }}>{money(r.price)}</b>
